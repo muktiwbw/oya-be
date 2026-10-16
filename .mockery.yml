@@ -1,0 +1,15 @@
+# Generated mocks live in a separate package imported only by tests.
+all: false
+dir: '{{.InterfaceDir}}/mocks'
+filename: mocks.go
+force-file-write: true
+formatter: goimports
+pkgname: mocks
+structname: 'Mock{{.InterfaceName}}'
+template: testify
+packages:
+  oya-be/internal/task:
+    interfaces:
+      TaskRepository:
+      Clock:
+      PublicIDGenerator:

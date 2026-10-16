@@ -1,0 +1,8 @@
+FROM golang:1.25.9-alpine
+# The Go race detector requires a C compiler even though production builds use CGO_ENABLED=0.
+RUN apk add --no-cache ca-certificates gcc musl-dev
+WORKDIR /workspace
+COPY go.mod go.sum ./
+RUN go mod download
+COPY . .
+CMD ["go", "test", "-count=1", "-tags=integration", "./tests/integration/..."]

@@ -1,0 +1,10 @@
+/bin/
+/data/
+*.db
+*.db-shm
+*.db-wal
+/coverage.out
+/.dev/
+.env
+.env.*
+!.env.example
