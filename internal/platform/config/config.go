@@ -14,7 +14,9 @@ import (
 
 type Config struct {
 	HTTPAddr         string
-	DBPath           string
+	DatabaseURL      string
+	JWTSecret        string
+	JWTExpiration    time.Duration
 	LogLevel         string
 	ShutdownTimeout  time.Duration
 	RequestBodyLimit int64
@@ -45,7 +47,12 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		}
 		return fallback
 	}
-	c := Config{HTTPAddr: get("OYA_HTTP_ADDR", ":8080"), DBPath: get("OYA_DB_PATH", "./data/oya.db"), LogLevel: get("OYA_LOG_LEVEL", "info")}
+	c := Config{
+		HTTPAddr:    get("OYA_HTTP_ADDR", ":8080"),
+		DatabaseURL: get("OYA_DATABASE_URL", "postgres://postgres:postgres@localhost:5432/oya?sslmode=disable"),
+		JWTSecret:   get("OYA_JWT_SECRET", "oya-dev-secret-change-in-production-min-32-chars"),
+		LogLevel:    get("OYA_LOG_LEVEL", "info"),
+	}
 	_, port, err := net.SplitHostPort(c.HTTPAddr)
 	if err != nil {
 		return c, fmt.Errorf("OYA_HTTP_ADDR must include a host and port")
@@ -54,8 +61,11 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 	if err != nil || n < 1 || n > 65535 {
 		return c, fmt.Errorf("OYA_HTTP_ADDR port must be between 1 and 65535")
 	}
-	if strings.TrimSpace(c.DBPath) == "" {
-		return c, fmt.Errorf("OYA_DB_PATH must not be empty")
+	if strings.TrimSpace(c.DatabaseURL) == "" {
+		return c, fmt.Errorf("OYA_DATABASE_URL must not be empty")
+	}
+	if len(strings.TrimSpace(c.JWTSecret)) < 16 {
+		return c, fmt.Errorf("OYA_JWT_SECRET must be at least 16 characters long")
 	}
 	switch c.LogLevel {
 	case "debug", "info", "warn", "error":
@@ -66,6 +76,7 @@ func Load(lookup func(string) (string, bool)) (Config, error) {
 		key, fallback string
 		dest          *time.Duration
 	}{
+		{"OYA_JWT_EXPIRATION", "24h", &c.JWTExpiration},
 		{"OYA_SHUTDOWN_TIMEOUT", "10s", &c.ShutdownTimeout},
 		{"OYA_IDEMPOTENCY_TTL", "24h", &c.IdempotencyTTL},
 	} {

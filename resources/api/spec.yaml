@@ -1,14 +1,17 @@
 openapi: 3.0.3
 info:
   title: OYA Task API
-  version: 0.2.0
-  description: Shared unauthenticated workspace for local or trusted internal use.
+  version: 0.3.0
+  description: Authenticated task management workspace.
 servers:
   - url: http://localhost:8080
+security:
+  - BearerAuth: []
 paths:
   /healthz:
     get:
       operationId: liveness
+      security: []
       responses:
         "200":
           description: Process is alive; no database access required.
@@ -23,6 +26,7 @@ paths:
   /readyz:
     get:
       operationId: readiness
+      security: []
       responses:
         "200":
           description: Database is available and migrations are complete.
@@ -38,6 +42,7 @@ paths:
   /version:
     get:
       operationId: version
+      security: []
       responses:
         "200":
           description: Build metadata.
@@ -51,20 +56,35 @@ paths:
                   version: { type: string, example: dev }
                   commit: { type: string, example: unknown }
         "405": { $ref: "#/components/responses/Error" }
-  /api/v1/tasks:
+  /api/v1/auth/login:
     post:
-      operationId: createTask
-      description: |
-        Create a task. Without a key, each valid request creates a separate task.
-        Generate a fresh key per intended operation and reuse it for retries.
-        Matching normalized input with the same key replays the original response
-        for 24 hours by default. Different input with the same key returns 409.
-        Invalid input does not consume a key. Maximum body size is 65536 bytes.
-      parameters:
-        - in: header
-          name: Idempotency-Key
-          schema: { type: string, minLength: 1, maxLength: 128 }
-          description: Opaque client-generated token, at most 128 bytes.
+      operationId: login
+      security: []
+      description: Authenticate using username and password to obtain a bearer token.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [username, password]
+              properties:
+                username: { type: string, minLength: 1 }
+                password: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: Authentication successful.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/v1/boards:
+    post:
+      operationId: createBoard
+      description: Create a new board owned by the authenticated user.
       requestBody:
         required: true
         content:
@@ -74,56 +94,110 @@ paths:
               additionalProperties: false
               required: [title]
               properties:
-                title:
-                  {
-                    type: string,
-                    minLength: 1,
-                    maxLength: 200,
-                    description: Trimmed before validation; whitespace-only is invalid.,
-                  }
+                title: { type: string, minLength: 1, maxLength: 200 }
                 description: { type: string, maxLength: 2000, default: "" }
-                status: { $ref: "#/components/schemas/Status" }
-            example:
-              { title: Prepare release notes, description: "", status: todo }
       responses:
         "201":
-          description: Created task or successful replay of original creation.
+          description: Board created.
           headers:
             Location:
               schema: { type: string }
-              description: /api/v1/tasks/{public_id}
-            Idempotency-Replayed:
-              schema: { type: string, enum: ["true"] }
-              description: Present only on replay.
+              description: /api/v1/boards/{public_id}
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/TaskEnvelope" }
+              schema: { $ref: "#/components/schemas/BoardEnvelope" }
         "400": { $ref: "#/components/responses/Error" }
-        "409": { $ref: "#/components/responses/Error" }
-        "413": { $ref: "#/components/responses/Error" }
-        "415": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
         "500": { $ref: "#/components/responses/Error" }
-        "503": { $ref: "#/components/responses/Error" }
     get:
-      operationId: listTasks
-      description: |
-        Order is created_at DESC, public_id ASC. Omit cursor for the first page.
-        Resend next_cursor unchanged with the same status filter. Traversal is
-        forward only and does not provide a snapshot across page requests.
+      operationId: listBoards
+      description: List all active boards owned by the authenticated user.
+      responses:
+        "200":
+          description: List of user boards.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/Board" }
+        "401": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/v1/boards/{board_public_id}:
+    parameters:
+      - in: path
+        name: board_public_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: getBoard
+      description: Get board details by public ID.
+      responses:
+        "200":
+          description: Board retrieved successfully.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BoardEnvelope" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    patch:
+      operationId: updateBoard
+      description: Update board title and/or description.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                title: { type: string, minLength: 1, maxLength: 200 }
+                description: { type: string, maxLength: 2000 }
+      responses:
+        "200":
+          description: Board updated successfully.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BoardEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteBoard
+      description: Cascade soft-delete board and all child tasks.
+      responses:
+        "204":
+          description: Board and tasks deleted.
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
+  /api/v1/boards/{board_public_id}/tasks:
+    parameters:
+      - in: path
+        name: board_public_id
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      operationId: listBoardTasks
+      description: List active tasks for this board.
       parameters:
         - in: query
           name: status
           schema: { $ref: "#/components/schemas/Status" }
         - in: query
           name: limit
-          schema: { type: integer, minimum: 1, maximum: 100, default: 50 }
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
         - in: query
           name: cursor
           schema: { type: string, minLength: 1, maxLength: 2048 }
-          description: Opaque URL-safe token from the preceding page.
       responses:
         "200":
-          description: A page of tasks, possibly empty.
+          description: A page of tasks for this board.
           content:
             application/json:
               schema:
@@ -138,17 +212,62 @@ paths:
                     required: [limit, count, has_more, next_cursor]
                     properties:
                       limit: { type: integer, minimum: 1, maximum: 100 }
-                      count:
-                        {
-                          type: integer,
-                          minimum: 0,
-                          description: Number returned in this page.,
-                        }
+                      count: { type: integer, minimum: 0 }
                       has_more: { type: boolean }
                       next_cursor: { type: string, nullable: true }
         "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
         "500": { $ref: "#/components/responses/Error" }
-        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/tasks:
+    post:
+      operationId: createTask
+      description: |
+        Create a task tied to a specific board.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          schema: { type: string, minLength: 1, maxLength: 128 }
+          description: Opaque client-generated token, at most 128 bytes.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [board_id, title]
+              properties:
+                board_id: { type: string, format: uuid }
+                title:
+                  {
+                    type: string,
+                    minLength: 1,
+                    maxLength: 200,
+                    description: Trimmed before validation; whitespace-only is invalid.,
+                  }
+                description: { type: string, maxLength: 2000, default: "" }
+                status: { $ref: "#/components/schemas/Status" }
+      responses:
+        "201":
+          description: Created task or successful replay of original creation.
+          headers:
+            Location:
+              schema: { type: string }
+              description: /api/v1/tasks/{public_id}
+            Idempotency-Replayed:
+              schema: { type: string, enum: ["true"] }
+              description: Present only on replay.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TaskEnvelope" }
+        "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "409": { $ref: "#/components/responses/Error" }
+        "413": { $ref: "#/components/responses/Error" }
+        "415": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
   /api/v1/tasks/{public_id}:
     parameters:
       - { $ref: "#/components/parameters/PublicID" }
@@ -161,17 +280,14 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/TaskEnvelope" }
         "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "405": { $ref: "#/components/responses/Error" }
         "500": { $ref: "#/components/responses/Error" }
-        "503": { $ref: "#/components/responses/Error" }
     patch:
       operationId: updateTask
       description: |
-        Edits a task title, Markdown description source, or both. At least one editable
-        field and expected_version are required. A matching no-op preserves version and
-        updated_at; real changes increment version by one. Markdown rendering and HTML
-        sanitization are not part of this API.
+        Edits a task title, Markdown description source, or both.
       requestBody:
         required: true
         content:
@@ -182,32 +298,36 @@ paths:
               required: [expected_version]
               minProperties: 2
               properties:
-                title: { type: string, minLength: 1, maxLength: 200, description: Trimmed before validation. }
-                description: { type: string, maxLength: 2000, description: Markdown source text. An empty string clears the description. }
+                title: { type: string, minLength: 1, maxLength: 200 }
+                description: { type: string, maxLength: 2000 }
                 expected_version: { type: integer, format: int64, minimum: 1 }
       responses:
         "200":
-          description: Updated task, including no-op success.
+          description: Updated task.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TaskEnvelope" }
         "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "405": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
-        "413": { $ref: "#/components/responses/Error" }
-        "415": { $ref: "#/components/responses/Error" }
         "500": { $ref: "#/components/responses/Error" }
-        "503": { $ref: "#/components/responses/Error" }
+    delete:
+      operationId: deleteTask
+      description: Soft delete a task.
+      responses:
+        "204":
+          description: Task deleted.
+        "401": { $ref: "#/components/responses/Error" }
+        "404": { $ref: "#/components/responses/Error" }
+        "500": { $ref: "#/components/responses/Error" }
   /api/v1/tasks/{public_id}/status:
     parameters:
       - { $ref: "#/components/parameters/PublicID" }
     patch:
       operationId: updateTaskStatus
-      description: |
-        All transitions are allowed. No-op updates preserve version and updated_at.
-        expected_version is required and is checked even for a no-op. Real changes
-        increment version by one.
+      description: Update task status.
       requestBody:
         required: true
         content:
@@ -221,53 +341,80 @@ paths:
                 expected_version: { type: integer, format: int64, minimum: 1 }
       responses:
         "200":
-          description: Updated task, including no-op success.
+          description: Status updated successfully.
           content:
             application/json:
               schema: { $ref: "#/components/schemas/TaskEnvelope" }
         "400": { $ref: "#/components/responses/Error" }
+        "401": { $ref: "#/components/responses/Error" }
         "404": { $ref: "#/components/responses/Error" }
         "405": { $ref: "#/components/responses/Error" }
         "409": { $ref: "#/components/responses/Error" }
-        "413": { $ref: "#/components/responses/Error" }
-        "415": { $ref: "#/components/responses/Error" }
         "500": { $ref: "#/components/responses/Error" }
-        "503": { $ref: "#/components/responses/Error" }
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
   parameters:
     PublicID:
       in: path
       name: public_id
       required: true
       schema: { type: string, format: uuid }
-      description: Canonical lowercase UUIDv7; internal numeric IDs are never accepted.
+      description: Canonical lowercase UUIDv7.
   schemas:
     Status:
       type: string
       enum: [todo, doing, done]
+    User:
+      type: object
+      required: [public_id, email, username, display_name]
+      properties:
+        public_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        username: { type: string }
+        display_name: { type: string }
+    LoginEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: object
+          required: [token, token_type, user]
+          properties:
+            token: { type: string }
+            token_type: { type: string, example: Bearer }
+            user: { $ref: "#/components/schemas/User" }
+    Board:
+      type: object
+      required: [public_id, title, description, created_at, updated_at]
+      properties:
+        public_id: { type: string, format: uuid }
+        title: { type: string }
+        description: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+    BoardEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/Board" }
     Task:
       type: object
       additionalProperties: false
       required:
-        [public_id, title, description, status, version, created_at, updated_at]
+        [public_id, board_id, title, description, status, version, created_at, updated_at]
       properties:
         public_id: { type: string, format: uuid }
+        board_id: { type: string, format: uuid }
         title: { type: string, minLength: 1, maxLength: 200 }
-        description: { type: string, maxLength: 2000, description: Markdown source text. }
+        description: { type: string, maxLength: 2000 }
         status: { $ref: "#/components/schemas/Status" }
         version: { type: integer, format: int64, minimum: 1 }
-        created_at:
-          {
-            type: string,
-            format: date-time,
-            example: "2026-10-16T10:15:30.000Z",
-          }
-        updated_at:
-          {
-            type: string,
-            format: date-time,
-            example: "2026-10-16T10:15:30.000Z",
-          }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
     TaskEnvelope:
       type: object
       required: [data]
@@ -288,6 +435,7 @@ components:
                   invalid_request,
                   validation_error,
                   invalid_cursor,
+                  unauthorized,
                   not_found,
                   method_not_allowed,
                   conflict,
@@ -309,7 +457,7 @@ components:
                   reason: { type: string }
   responses:
     Error:
-      description: JSON error. SQL statements and internal errors are not exposed.
+      description: JSON error.
       content:
         application/json:
           schema: { $ref: "#/components/schemas/Error" }

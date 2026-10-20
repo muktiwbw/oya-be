@@ -23,15 +23,18 @@ func (s Status) Valid() bool { return s == Todo || s == Doing || s == Done }
 type Task struct {
 	ID          int64
 	PublicID    string
+	BoardID     string // Board's public UUID
 	Title       string
 	Description string
 	Status      Status
 	Version     int64
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
+	DeletedAt   *time.Time
 }
 
 type CreateInput struct {
+	BoardID     string
 	Title       string
 	Description string
 	Status      Status
@@ -46,12 +49,20 @@ func (e *ValidationError) Error() string { return fmt.Sprintf("%s: %s", e.Field,
 
 var (
 	ErrNotFound             = errors.New("task not found")
+	ErrBoardNotFound        = errors.New("board not found")
 	ErrVersionConflict      = errors.New("task version conflict")
 	ErrIdempotencyKeyReused = errors.New("idempotency key reused with different input")
 	ErrUnavailable          = errors.New("service unavailable")
 )
 
 func NormalizeCreate(in CreateInput) (CreateInput, error) {
+	in.BoardID = strings.TrimSpace(in.BoardID)
+	if in.BoardID == "" {
+		return in, &ValidationError{"board_id", "required"}
+	}
+	if !ValidPublicID(in.BoardID) {
+		return in, &ValidationError{"board_id", "must be a canonical UUIDv7"}
+	}
 	in.Title = strings.TrimSpace(in.Title)
 	if in.Title == "" {
 		return in, &ValidationError{"title", "required"}

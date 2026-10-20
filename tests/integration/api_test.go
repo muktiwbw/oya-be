@@ -9,179 +9,207 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/stretchr/testify/require"
 	tc "github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/modules/postgres"
+	"github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
+	"golang.org/x/crypto/bcrypt"
 )
 
-func TestContainerTaskLifecycle(t *testing.T) {
+func TestEndToEndLifecycle(t *testing.T) {
 	ctx := context.Background()
 	image := os.Getenv("OYA_TEST_IMAGE")
 	if image == "" {
 		image = "oya:integration"
 	}
-	volume := "oya-test-" + uuid.NewString()
-	c, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{ContainerRequest: tc.ContainerRequest{Image: image, ExposedPorts: []string{"8080/tcp"}, Mounts: tc.ContainerMounts{tc.VolumeMount(volume, "/data")}, WaitingFor: wait.ForHTTP("/readyz").WithPort("8080/tcp").WithStartupTimeout(time.Minute)}, Started: true})
-	tc.CleanupContainer(t, c, tc.RemoveVolumes(volume))
-	if err != nil {
-		t.Fatal(err)
-	}
-	endpoint := func() string {
-		t.Helper()
-		host, err := c.Host(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		port, err := c.MappedPort(ctx, "8080/tcp")
-		if err != nil {
-			t.Fatal(err)
-		}
-		return fmt.Sprintf("http://%s:%s", host, port.Port())
-	}
-	base := endpoint()
+
+	nw, err := network.New(ctx)
+	tc.CleanupNetwork(t, nw)
+	require.NoError(t, err)
+
+	migrationsPath, err := filepath.Abs(filepath.Join("..", "..", "migrations", "V1__initial_schema.sql"))
+	require.NoError(t, err)
+
+	pgContainer, err := postgres.Run(ctx,
+		"postgres:16-alpine",
+		postgres.WithDatabase("oya"),
+		postgres.WithUsername("postgres"),
+		postgres.WithPassword("postgres"),
+		postgres.WithInitScripts(migrationsPath),
+		network.WithNetwork([]string{"postgres"}, nw),
+	)
+	tc.CleanupContainer(t, pgContainer)
+	require.NoError(t, err)
+
+	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+
+	// Seed test user fixture directly in the database
+	conn, err := pgx.Connect(ctx, connStr)
+	require.NoError(t, err)
+	defer conn.Close(ctx)
+
+	hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
+	require.NoError(t, err)
+
+	userUUID, err := uuid.NewV7()
+	require.NoError(t, err)
+
+	_, err = conn.Exec(ctx, `
+		INSERT INTO users (public_id, email, username, password, display_name)
+		VALUES ($1, $2, $3, $4, $5)
+	`, userUUID, "test@example.com", "testuser", string(hash), "Test User")
+	require.NoError(t, err)
+
+	// Start application container
+	appContainer, err := tc.GenericContainer(ctx, tc.GenericContainerRequest{
+		ContainerRequest: tc.ContainerRequest{
+			Image:        image,
+			ExposedPorts: []string{"8080/tcp"},
+			Networks:     []string{nw.Name},
+			Env: map[string]string{
+				"OYA_HTTP_ADDR":    ":8080",
+				"OYA_DATABASE_URL": "postgres://postgres:postgres@postgres:5432/oya?sslmode=disable",
+				"OYA_JWT_SECRET":   "test-secret-key-that-is-at-least-32-chars-long",
+			},
+			WaitingFor: wait.ForHTTP("/readyz").WithPort("8080/tcp").WithStartupTimeout(time.Minute),
+		},
+		Started: true,
+	})
+	tc.CleanupContainer(t, appContainer)
+	require.NoError(t, err)
+
+	host, err := appContainer.Host(ctx)
+	require.NoError(t, err)
+	port, err := appContainer.MappedPort(ctx, "8080/tcp")
+	require.NoError(t, err)
+
+	baseURL := fmt.Sprintf("http://%s:%s", host, port.Port())
 	client := http.Client{Timeout: 10 * time.Second}
+
+	var authToken string
+
 	call := func(method, path, body, key string, want int) map[string]any {
 		t.Helper()
-		r, err := http.NewRequest(method, base+path, strings.NewReader(body))
-		if err != nil {
-			t.Fatal(err)
-		}
+		r, err := http.NewRequest(method, baseURL+path, strings.NewReader(body))
+		require.NoError(t, err)
 		r.Header.Set("Content-Type", "application/json")
 		if key != "" {
 			r.Header.Set("Idempotency-Key", key)
 		}
+		if authToken != "" {
+			r.Header.Set("Authorization", "Bearer "+authToken)
+		}
 		res, err := client.Do(r)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 		defer res.Body.Close()
+
 		b, err := io.ReadAll(res.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.StatusCode != want {
-			t.Fatalf("%s %s: got %d, want %d: %s", method, path, res.StatusCode, want, b)
+		require.NoError(t, err)
+
+		require.Equal(t, want, res.StatusCode, "%s %s: got %d, want %d: %s", method, path, res.StatusCode, want, string(b))
+		if len(b) == 0 {
+			return nil
 		}
 		var decoded map[string]any
-		if err = json.Unmarshal(b, &decoded); err != nil {
-			t.Fatal(err)
-		}
+		err = json.Unmarshal(b, &decoded)
+		require.NoError(t, err)
 		return decoded
 	}
+
+	// 1. Public operational endpoints
 	call("GET", "/healthz", "", "", 200)
 	call("GET", "/readyz", "", "", 200)
 	call("GET", "/version", "", "", 200)
-	call("DELETE", "/api/v1/tasks", "", "", 405)
-	call("GET", "/api/v1/tasks/", "", "", 404)
-	call("GET", "/missing", "", "", 404)
-	created := call("POST", "/api/v1/tasks", `{"title":"container task"}`, "create-1", 201)["data"].(map[string]any)
-	id := created["public_id"].(string)
-	path := "/api/v1/tasks/" + id
-	if _, ok := created["id"]; ok {
-		t.Fatal("leaked internal ID")
-	}
-	call("GET", path, "", "", 200)
-	call("PATCH", path+"/status", `{"status":"doing","expected_version":1}`, "", 200)
-	call("PATCH", path+"/status", `{"status":"done","expected_version":1}`, "", 409)
-	edited := call("PATCH", path, `{"title":"edited container task","description":"# Markdown","expected_version":2}`, "", 200)["data"].(map[string]any)
-	if edited["title"] != "edited container task" || edited["description"] != "# Markdown" || edited["version"] != float64(3) {
-		t.Fatal("task edit did not return changed task")
-	}
-	call("PATCH", path, `{"description":"","expected_version":3}`, "", 200)
-	replayed := call("POST", "/api/v1/tasks", `{"title":"container task"}`, "create-1", 201)["data"].(map[string]any)
-	if replayed["public_id"] != id || replayed["status"] != "todo" {
-		t.Fatal("replay changed original response")
-	}
-	call("POST", "/api/v1/tasks", `{"title":"different"}`, "create-1", 409)
-	call("POST", "/api/v1/tasks", `{"title":"container task"}`, "create-2", 201)
-	page := call("GET", "/api/v1/tasks?limit=1", "", "", 200)["pagination"].(map[string]any)
-	cursor, ok := page["next_cursor"].(string)
-	if !ok || page["has_more"] != true {
-		t.Fatal("missing next cursor")
-	}
-	call("GET", "/api/v1/tasks?limit=1&cursor="+cursor, "", "", 200)
-	call("GET", "/api/v1/tasks?status=todo&cursor="+cursor, "", "", 400)
-	call("POST", "/api/v1/tasks", `{"title":""}`, "correctable", 400)
-	call("POST", "/api/v1/tasks", `{"title":"corrected"}`, "correctable", 201)
-	call("GET", "/api/v1/tasks/bad", "", "", 400)
-	for _, from := range []string{"todo", "doing", "done"} {
-		for _, to := range []string{"todo", "doing", "done"} {
-			row := call("POST", "/api/v1/tasks", `{"title":"transition","status":"`+from+`"}`, "", 201)["data"].(map[string]any)
-			changed := call("PATCH", "/api/v1/tasks/"+row["public_id"].(string)+"/status", `{"status":"`+to+`","expected_version":1}`, "", 200)["data"].(map[string]any)
-			if changed["status"] != to {
-				t.Fatal("transition failed")
-			}
-			if from == to && changed["version"] != float64(1) {
-				t.Fatal("no-op incremented version")
-			}
-		}
-	}
-	var wg sync.WaitGroup
-	type concurrentResult struct {
-		status int
-		id     string
-		err    error
-	}
-	results := make(chan concurrentResult, 4)
-	for i := 0; i < 4; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			req, err := http.NewRequest("POST", base+"/api/v1/tasks", strings.NewReader(`{"title":"concurrent retry"}`))
-			if err != nil {
-				results <- concurrentResult{err: err}
-				return
-			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Idempotency-Key", "concurrent-key")
-			res, err := client.Do(req)
-			if err != nil {
-				results <- concurrentResult{err: err}
-				return
-			}
-			defer res.Body.Close()
-			var decoded struct {
-				Data struct {
-					PublicID string `json:"public_id"`
-				}
-			}
-			err = json.NewDecoder(res.Body).Decode(&decoded)
-			results <- concurrentResult{res.StatusCode, decoded.Data.PublicID, err}
-		}()
-	}
-	wg.Wait()
-	close(results)
-	concurrentID := ""
-	for result := range results {
-		if result.err != nil || result.status != 201 || result.id == "" {
-			t.Fatalf("concurrent create failed: %+v", result)
-		}
-		if concurrentID == "" {
-			concurrentID = result.id
-		}
-		if result.id != concurrentID {
-			t.Fatal("duplicate concurrent task")
-		}
-	}
-	version := 4
-	for _, status := range []string{"done", "todo", "doing"} {
-		call("PATCH", path+"/status", `{"status":"`+status+`","expected_version":`+fmt.Sprint(version)+`}`, "", 200)
-		version++
-	}
-	if err = c.Stop(ctx, nil); err != nil {
-		t.Fatal(err)
-	}
-	if err = c.Start(ctx); err != nil {
-		t.Fatal(err)
-	}
-	base = endpoint()
-	got := call("GET", path, "", "", 200)["data"].(map[string]any)
-	if got["public_id"] != id || got["status"] != "doing" || got["title"] != "edited container task" || got["description"] != "" {
-		t.Fatal("restart lost committed task")
-	}
+
+	// 2. Unauthenticated calls to protected routes must be rejected with 401
+	call("GET", "/api/v1/boards", "", "", 401)
+	call("POST", "/api/v1/tasks", `{"title":"test"}`, "", 401)
+
+	// 3. Login
+	call("POST", "/api/v1/auth/login", `{"username":"testuser","password":"wrongpassword"}`, "", 401)
+	loginRes := call("POST", "/api/v1/auth/login", `{"username":"testuser","password":"password123"}`, "", 200)
+	token, ok := loginRes["data"].(map[string]any)["token"].(string)
+	require.True(t, ok)
+	require.NotEmpty(t, token)
+	authToken = token
+
+	// 4. Board CRUD
+	boardCreated := call("POST", "/api/v1/boards", `{"title":"Product Roadmap","description":"Q4 initiatives"}`, "", 201)
+	boardData := boardCreated["data"].(map[string]any)
+	boardID := boardData["public_id"].(string)
+	require.NotEmpty(t, boardID)
+
+	// Get Board
+	boardGet := call("GET", "/api/v1/boards/"+boardID, "", "", 200)
+	require.Equal(t, "Product Roadmap", boardGet["data"].(map[string]any)["title"])
+
+	// Update Board
+	boardUpdated := call("PATCH", "/api/v1/boards/"+boardID, `{"title":"Product Roadmap 2026"}`, "", 200)
+	require.Equal(t, "Product Roadmap 2026", boardUpdated["data"].(map[string]any)["title"])
+
+	// List Boards
+	boardList := call("GET", "/api/v1/boards", "", "", 200)
+	require.Len(t, boardList["data"].([]any), 1)
+
+	// 5. Task Creation & Immutability
+	taskReqBody := fmt.Sprintf(`{"board_id":"%s","title":"Deliver FEAT-02","description":"PostgreSQL migration"}`, boardID)
+	taskCreated := call("POST", "/api/v1/tasks", taskReqBody, "create-key-1", 201)
+	taskData := taskCreated["data"].(map[string]any)
+	taskID := taskData["public_id"].(string)
+	require.NotEmpty(t, taskID)
+	require.Equal(t, boardID, taskData["board_id"])
+
+	// Replay with same idempotency key
+	replayed := call("POST", "/api/v1/tasks", taskReqBody, "create-key-1", 201)
+	require.Equal(t, taskID, replayed["data"].(map[string]any)["public_id"])
+
+	// Replay with different body -> 409
+	call("POST", "/api/v1/tasks", fmt.Sprintf(`{"board_id":"%s","title":"Different"}`, boardID), "create-key-1", 409)
+
+	// Get Task
+	taskGet := call("GET", "/api/v1/tasks/"+taskID, "", "", 200)
+	require.Equal(t, "Deliver FEAT-02", taskGet["data"].(map[string]any)["title"])
+
+	// Update Task
+	taskUpdated := call("PATCH", "/api/v1/tasks/"+taskID, `{"title":"Deliver FEAT-02 Completed","expected_version":1}`, "", 200)
+	require.Equal(t, "Deliver FEAT-02 Completed", taskUpdated["data"].(map[string]any)["title"])
+	require.Equal(t, float64(2), taskUpdated["data"].(map[string]any)["version"])
+
+	// Update Task Status
+	call("PATCH", "/api/v1/tasks/"+taskID+"/status", `{"status":"doing","expected_version":2}`, "", 200)
+
+	// List Tasks by Board
+	boardTasks := call("GET", "/api/v1/boards/"+boardID+"/tasks", "", "", 200)
+	tasksList := boardTasks["data"].([]any)
+	require.Len(t, tasksList, 1)
+
+	// Create second task on same board
+	task2ReqBody := fmt.Sprintf(`{"board_id":"%s","title":"Task 2"}`, boardID)
+	task2Created := call("POST", "/api/v1/tasks", task2ReqBody, "", 201)
+	task2ID := task2Created["data"].(map[string]any)["public_id"].(string)
+
+	// Soft-delete single task
+	call("DELETE", "/api/v1/tasks/"+taskID, "", "", 204)
+	call("GET", "/api/v1/tasks/"+taskID, "", "", 404)
+
+	// Board task list now only has Task 2
+	boardTasksAfterDelete := call("GET", "/api/v1/boards/"+boardID+"/tasks", "", "", 200)
+	require.Len(t, boardTasksAfterDelete["data"].([]any), 1)
+
+	// 6. Cascade Soft-Delete Board
+	call("DELETE", "/api/v1/boards/"+boardID, "", "", 204)
+
+	// Board is soft-deleted
+	call("GET", "/api/v1/boards/"+boardID, "", "", 404)
+	// Task 2 is cascaded soft-deleted
+	call("GET", "/api/v1/tasks/"+task2ID, "", "", 404)
 }

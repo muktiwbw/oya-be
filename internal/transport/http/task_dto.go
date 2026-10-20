@@ -3,6 +3,7 @@ package httpapi
 import "oya-be/internal/task"
 
 type CreateTaskRequest struct {
+	BoardID     string      `json:"board_id"`
 	Title       string      `json:"title"`
 	Description string      `json:"description,omitempty"`
 	Status      task.Status `json:"status,omitempty"`
@@ -27,6 +28,7 @@ type ListTasksRequest struct {
 
 type TaskDTO struct {
 	PublicID    string      `json:"public_id"`
+	BoardID     string      `json:"board_id"`
 	Title       string      `json:"title"`
 	Description string      `json:"description"`
 	Status      task.Status `json:"status"`
@@ -38,9 +40,14 @@ type TaskDTO struct {
 // newTaskDTO converts a domain task into its public HTTP representation.
 func newTaskDTO(t task.Task) TaskDTO {
 	return TaskDTO{
-		PublicID: t.PublicID, Title: t.Title, Description: t.Description,
-		Status: t.Status, Version: t.Version,
-		CreatedAt: task.FormatTime(t.CreatedAt), UpdatedAt: task.FormatTime(t.UpdatedAt),
+		PublicID:    t.PublicID,
+		BoardID:     t.BoardID,
+		Title:       t.Title,
+		Description: t.Description,
+		Status:      t.Status,
+		Version:     t.Version,
+		CreatedAt:   task.FormatTime(t.CreatedAt),
+		UpdatedAt:   task.FormatTime(t.UpdatedAt),
 	}
 }
 

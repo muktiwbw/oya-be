@@ -21,7 +21,7 @@ func NewService(repo TaskRepository, clock Clock, ids PublicIDGenerator, ttl tim
 	return &Service{repo, clock, ids, ttl}
 }
 
-func (s *Service) CreateTask(ctx context.Context, in CreateInput, key string) (CreateResult, error) {
+func (s *Service) CreateTask(ctx context.Context, userID int64, in CreateInput, key string) (CreateResult, error) {
 	normalized, err := NormalizeCreate(in)
 	if err != nil {
 		return CreateResult{}, err
@@ -38,19 +38,34 @@ func (s *Service) CreateTask(ctx context.Context, in CreateInput, key string) (C
 	body, _ := json.Marshal(normalized)
 	hash := sha256.Sum256(body)
 	return s.repo.CreateTask(ctx, CreateRequest{
-		Task:           Task{PublicID: id.String(), Title: normalized.Title, Description: normalized.Description, Status: normalized.Status, Version: 1, CreatedAt: now, UpdatedAt: now},
-		IdempotencyKey: key, RequestHash: hex.EncodeToString(hash[:]), ExpiresBefore: now.Add(-s.ttl),
+		UserID: userID,
+		Task: Task{
+			PublicID:    id.String(),
+			BoardID:     normalized.BoardID,
+			Title:       normalized.Title,
+			Description: normalized.Description,
+			Status:      normalized.Status,
+			Version:     1,
+			CreatedAt:   now,
+			UpdatedAt:   now,
+		},
+		IdempotencyKey: key,
+		RequestHash:    hex.EncodeToString(hash[:]),
+		ExpiresBefore:  now.Add(-s.ttl),
 	})
 }
 
-func (s *Service) GetTask(ctx context.Context, id string) (Task, error) {
+func (s *Service) GetTask(ctx context.Context, userID int64, id string) (Task, error) {
 	if !ValidPublicID(id) {
 		return Task{}, &ValidationError{"public_id", "must be a canonical UUIDv7"}
 	}
-	return s.repo.GetTaskByPublicID(ctx, id)
+	return s.repo.GetTaskByPublicID(ctx, id, userID)
 }
 
-func (s *Service) ListTasks(ctx context.Context, status Status, limit int, cursor string) (Page, error) {
+func (s *Service) ListTasksByBoard(ctx context.Context, userID int64, boardID string, status Status, limit int, cursor string) (Page, error) {
+	if !ValidPublicID(boardID) {
+		return Page{}, &ValidationError{"board_id", "must be a canonical UUIDv7"}
+	}
 	if status != "" && !status.Valid() {
 		return Page{}, &ValidationError{"status", "must be todo, doing, or done"}
 	}
@@ -65,7 +80,7 @@ func (s *Service) ListTasks(ctx context.Context, status Status, limit int, curso
 		}
 		q.After = &p
 	}
-	rows, err := s.repo.ListTasks(ctx, q)
+	rows, err := s.repo.ListTasksByBoard(ctx, boardID, userID, q)
 	if err != nil {
 		return Page{}, err
 	}
@@ -86,17 +101,17 @@ func (s *Service) ListTasks(ctx context.Context, status Status, limit int, curso
 	return p, nil
 }
 
-func (s *Service) UpdateTaskStatus(ctx context.Context, id string, in UpdateStatusInput) (Task, error) {
+func (s *Service) UpdateTaskStatus(ctx context.Context, userID int64, id string, in UpdateStatusInput) (Task, error) {
 	if !ValidPublicID(id) {
 		return Task{}, &ValidationError{"public_id", "must be a canonical UUIDv7"}
 	}
 	if err := in.Validate(); err != nil {
 		return Task{}, err
 	}
-	return s.repo.UpdateTaskStatusByPublicID(ctx, id, in, NormalizeTime(s.clock.Now()))
+	return s.repo.UpdateTaskStatusByPublicID(ctx, id, userID, in, NormalizeTime(s.clock.Now()))
 }
 
-func (s *Service) UpdateTask(ctx context.Context, id string, in UpdateTaskInput) (Task, error) {
+func (s *Service) UpdateTask(ctx context.Context, userID int64, id string, in UpdateTaskInput) (Task, error) {
 	if !ValidPublicID(id) {
 		return Task{}, &ValidationError{"public_id", "must be a canonical UUIDv7"}
 	}
@@ -104,5 +119,12 @@ func (s *Service) UpdateTask(ctx context.Context, id string, in UpdateTaskInput)
 	if err != nil {
 		return Task{}, err
 	}
-	return s.repo.UpdateTaskByPublicID(ctx, id, normalized, NormalizeTime(s.clock.Now()))
+	return s.repo.UpdateTaskByPublicID(ctx, id, userID, normalized, NormalizeTime(s.clock.Now()))
+}
+
+func (s *Service) DeleteTask(ctx context.Context, userID int64, id string) error {
+	if !ValidPublicID(id) {
+		return &ValidationError{"public_id", "must be a canonical UUIDv7"}
+	}
+	return s.repo.DeleteTaskByPublicID(ctx, id, userID)
 }
