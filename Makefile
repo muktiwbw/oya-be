@@ -10,7 +10,7 @@ MOCKERY ?= $(GO) run github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
 SQLC_VERSION ?= v1.27.0
 SQLC ?= $(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
 FLYWAY_IMAGE ?= flyway/flyway:latest
-FLYWAY_URL ?= jdbc:postgresql://localhost:5432/oya?sslmode=disable
+FLYWAY_URL ?= jdbc:postgresql://localhost:15432/oya?sslmode=disable
 FLYWAY_USER ?= postgres
 FLYWAY_PASSWORD ?= postgres
 

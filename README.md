@@ -4,15 +4,24 @@ A Go task backend with PostgreSQL persistence. OYA provides user authentication,
 
 ## Prerequisites
 
-- Go 1.26+ (selected automatically through `go.mod` when toolchain downloads are enabled).
+- Go 1.26 (Go 1.26.10 is pinned in `mise.toml` and the Docker build images).
 - PostgreSQL 16+ (or running via Docker).
 - Make.
 - Docker Desktop or a Docker Engine for running Flyway migrations, container builds, and integration tests.
 - A C compiler if running `make test-race` (production builds use pure Go with `CGO_ENABLED=0`).
 
-The module path is `oya-be`; change it and local imports together when a remote repository is selected. No mise installation is required.
+The module path is `oya-be`; change it and local imports together when a remote repository is selected. `go.mod` declares the minimum supported Go version. mise is optional; an existing Go 1.26 installation can run the Make targets directly.
 
 ## Local development
+
+If using mise, install and select the pinned Go toolchain first:
+
+```sh
+mise install
+mise exec -- go version
+```
+
+With mise activated in your shell, run the commands below directly. Otherwise, prefix Make commands with `mise exec --`, for example `mise exec -- make check`.
 
 ```sh
 cp .env.example .env
