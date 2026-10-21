@@ -7,21 +7,30 @@ DOCKER_SOCKET ?= /var/run/docker.sock
 TESTCONTAINERS_HOST ?= host.docker.internal
 MOCKERY_VERSION ?= v3.5.5
 MOCKERY ?= $(GO) run github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
+SQLC_VERSION ?= v1.27.0
+SQLC ?= $(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
+FLYWAY_IMAGE ?= flyway/flyway:latest
+FLYWAY_URL ?= jdbc:postgresql://localhost:5432/oya?sslmode=disable
+FLYWAY_USER ?= postgres
+FLYWAY_PASSWORD ?= postgres
 
-.PHONY: help fmt vet test test-race generate-mocks integration-test check build run migrate docker-build
+.PHONY: help fmt vet test test-race generate-mocks sqlc integration-test check build run migrate dev-db dev-db-stop docker-build
 
 help:
 	@echo "Available commands:"
+	@echo "  make dev-db          Start local PostgreSQL container using Docker Compose"
+	@echo "  make dev-db-stop     Stop local PostgreSQL container"
 	@echo "  make fmt              Format Go source files"
 	@echo "  make vet              Run go vet"
 	@echo "  make test             Run non-containerized tests"
 	@echo "  make test-race        Run non-containerized tests with the race detector"
 	@echo "  make generate-mocks   Regenerate test mocks using pinned Mockery"
+	@echo "  make sqlc             Run sqlc generate"
 	@echo "  make integration-test Run Docker and Testcontainers integration tests"
 	@echo "  make check            Run formatting checks, vet, and tests"
 	@echo "  make build            Build the application binary"
 	@echo "  make run              Run the application locally"
-	@echo "  make migrate          Apply pending database migrations and exit"
+	@echo "  make migrate          Apply pending database migrations using Flyway"
 	@echo "  make docker-build     Build the application image"
 
 fmt:
@@ -38,6 +47,9 @@ test-race:
 
 generate-mocks:
 	GOTOOLCHAIN="$$($(GO) env GOVERSION)" $(MOCKERY) --config .mockery.yml
+
+sqlc:
+	$(SQLC) generate
 
 integration-test:
 	$(DOCKER) build -t $(APP_IMAGE) .
@@ -65,7 +77,13 @@ run:
 	$(GO) run ./cmd/oya
 
 migrate:
-	$(GO) run ./cmd/oya migrate
+	$(DOCKER) run --rm --net=host -v "$$(pwd)/migrations":/flyway/sql $(FLYWAY_IMAGE) -url="$(FLYWAY_URL)" -user=$(FLYWAY_USER) -password=$(FLYWAY_PASSWORD) migrate
+
+dev-db:
+	$(DOCKER) compose up -d postgres
+
+dev-db-stop:
+	$(DOCKER) compose down
 
 docker-build:
 	$(DOCKER) build -t $(APP_IMAGE) .

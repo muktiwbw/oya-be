@@ -13,6 +13,25 @@ import (
 	"oya-be/internal/task"
 )
 
+type fieldError struct {
+	Field  string
+	Reason string
+}
+
+func writeValidationErrors(w http.ResponseWriter, errs []fieldError) {
+	details := make([]ErrorDetailDTO, len(errs))
+	for i, e := range errs {
+		details[i] = ErrorDetailDTO{Field: e.Field, Reason: e.Reason}
+	}
+	writeJSON(w, http.StatusBadRequest, ErrorResponse{
+		Error: ErrorDTO{
+			Code:    "validation_error",
+			Message: "request validation failed",
+			Details: details,
+		},
+	})
+}
+
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -35,6 +54,8 @@ func writeFailure(w http.ResponseWriter, r *http.Request, err error) {
 		writeProblem(w, http.StatusBadRequest, "invalid_cursor", "cursor is malformed or does not match the status filter")
 	case errors.Is(err, task.ErrNotFound):
 		writeProblem(w, http.StatusNotFound, "not_found", "task not found")
+	case errors.Is(err, task.ErrBoardNotFound):
+		writeProblem(w, http.StatusNotFound, "not_found", "board not found")
 	case errors.Is(err, task.ErrVersionConflict):
 		writeProblem(w, http.StatusConflict, "version_conflict", "task version does not match expected_version")
 	case errors.Is(err, task.ErrIdempotencyKeyReused):
@@ -98,15 +119,15 @@ func (a *API) decodeJSON(w http.ResponseWriter, r *http.Request, dest any) bool 
 func parseListTasksRequest(r *http.Request) (ListTasksRequest, error) {
 	query := r.URL.Query()
 	in := ListTasksRequest{Status: task.Status(query.Get("status")), Limit: 50, Cursor: query.Get("cursor")}
-	if values, ok := query["limit"]; ok {
-		var err error
-		in.Limit, err = strconv.Atoi(values[0])
-		if err != nil {
-			return in, &task.ValidationError{Field: "limit", Reason: "must be a positive integer"}
-		}
+	if in.Status != "" && !in.Status.Valid() {
+		return in, &task.ValidationError{Field: "status", Reason: "must be todo, doing, or done"}
 	}
-	if values, ok := query["cursor"]; ok && values[0] == "" {
-		return in, task.ErrInvalidCursor
+	if rawLimit := query.Get("limit"); rawLimit != "" {
+		limit, err := strconv.Atoi(rawLimit)
+		if err != nil || limit < 1 || limit > 100 {
+			return in, &task.ValidationError{Field: "limit", Reason: "must be between 1 and 100"}
+		}
+		in.Limit = limit
 	}
 	return in, nil
 }

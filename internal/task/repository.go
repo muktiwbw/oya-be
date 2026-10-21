@@ -31,6 +31,7 @@ type CreateResult struct {
 
 // CreateRequest makes task insertion and optional retry tracking one atomic operation.
 type CreateRequest struct {
+	UserID         int64
 	Task           Task
 	IdempotencyKey string
 	RequestHash    string
@@ -39,8 +40,9 @@ type CreateRequest struct {
 
 type TaskRepository interface {
 	CreateTask(context.Context, CreateRequest) (CreateResult, error)
-	GetTaskByPublicID(context.Context, string) (Task, error)
-	ListTasks(context.Context, ListQuery) ([]Task, error)
-	UpdateTaskStatusByPublicID(context.Context, string, UpdateStatusInput, time.Time) (Task, error)
-	UpdateTaskByPublicID(context.Context, string, UpdateTaskInput, time.Time) (Task, error)
+	GetTaskByPublicID(context.Context, string, int64) (Task, error)
+	ListTasksByBoard(context.Context, string, int64, ListQuery) ([]Task, error)
+	UpdateTaskStatusByPublicID(context.Context, string, int64, UpdateStatusInput, time.Time) (Task, error)
+	UpdateTaskByPublicID(context.Context, string, int64, UpdateTaskInput, time.Time) (Task, error)
+	DeleteTaskByPublicID(context.Context, string, int64) error
 }
