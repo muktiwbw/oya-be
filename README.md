@@ -38,7 +38,7 @@ To stop the development database when done:
 make dev-db-stop
 ```
 
-The server listens at `http://localhost:8080`. It connects to PostgreSQL using `OYA_DATABASE_URL` and validates connection readiness at startup.
+The server listens at `http://localhost:8080`. It connects to PostgreSQL using the required `DB_*` settings and validates connection readiness at startup.
 
 ### Database Migrations & sqlc
 
@@ -49,7 +49,7 @@ Apply pending migrations using Docker and Flyway:
 ```sh
 make migrate
 # Custom database URL or credentials:
-FLYWAY_URL=jdbc:postgresql://localhost:5432/my_db FLYWAY_USER=postgres FLYWAY_PASSWORD=postgres make migrate
+DB_HOST=localhost DB_PORT=5432 DB_NAME=my_db DB_USER=postgres DB_PASSWORD=secret make migrate
 ```
 
 Verify the database connection without starting the HTTP server:
@@ -91,18 +91,25 @@ The application, migration verification, and health check load an optional `.env
 | Variable | Default | Description |
 |---|---|---|
 | `OYA_HTTP_ADDR` | `:8080` | Host and port to listen on (port between 1 and 65535) |
-| `OYA_DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/oya?sslmode=disable` | PostgreSQL connection URL |
+| `DB_HOST` | `localhost` | PostgreSQL host |
+| `DB_PORT` | `5432` | PostgreSQL port (use `15432` with `make dev-db`) |
+| `DB_NAME` | `oya` | PostgreSQL database name |
+| `DB_USER` | — | Required PostgreSQL username |
+| `DB_PASSWORD` | — | Required PostgreSQL password |
 | `OYA_JWT_SECRET` | `oya-dev-secret-change-in-production-min-32-chars` | Secret key for JWT signing (minimum 16 characters) |
-| `OYA_JWT_EXPIRATION` | `24h` | JWT token validity duration (e.g. `24h`, `1h`) |
+| `OYA_JWT_EXPIRATION` | `15m` | Access-JWT validity duration |
+| `OYA_REFRESH_TTL` | `720h` | Refresh-session validity duration |
+| `OYA_GOOGLE_CLIENT_ID` | empty | Google OAuth client ID; set with the client secret to enable sign-in |
+| `OYA_GOOGLE_CLIENT_SECRET` | empty | Google OAuth client secret; never commit it |
+| `OYA_GOOGLE_REDIRECT_URL` | `http://localhost:5173/api/v1/auth/google/callback` | Registered Google OAuth callback URL through the Vite proxy |
+| `OYA_GOOGLE_FRONTEND_REDIRECT_URL` | `http://localhost:5173/auth/callback` | Frontend route after Google login completes |
+| `OYA_REFRESH_COOKIE_SECURE` | `false` | Mark the refresh cookie `Secure`; keep `false` for local HTTP development |
 | `OYA_LOG_LEVEL` | `info` | Logging verbosity (`debug`, `info`, `warn`, or `error`) |
 | `OYA_SHUTDOWN_TIMEOUT` | `10s` | Graceful shutdown timeout duration |
 | `OYA_REQUEST_BODY_LIMIT` | `65536` | Maximum request body size in bytes (1 to 65536) |
 | `OYA_IDEMPOTENCY_TTL` | `24h` | Expiration time for task creation idempotency keys |
 
-Flyway migration settings (used by `make migrate`):
-- `FLYWAY_URL`: `jdbc:postgresql://localhost:5432/oya?sslmode=disable`
-- `FLYWAY_USER`: `postgres`
-- `FLYWAY_PASSWORD`: `postgres`
+`make migrate` uses the same `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, and `DB_PASSWORD` settings as the application.
 
 HTTP server defaults: header read timeout 5 seconds, read timeout 10 seconds, write timeout 15 seconds, idle timeout 60 seconds. PostgreSQL connection pooling is managed via `pgxpool.Pool`. SIGINT and SIGTERM trigger graceful shutdown; pending requests complete before closing database connections or reaching the shutdown timeout.
 
@@ -111,7 +118,8 @@ HTTP server defaults: header read timeout 5 seconds, read timeout 10 seconds, wr
 ```sh
 make docker-build
 docker run --rm --name oya -p 8080:8080 \
-  -e OYA_DATABASE_URL="postgres://postgres:postgres@host.docker.internal:5432/oya?sslmode=disable" \
+  -e DB_HOST=host.docker.internal -e DB_PORT=5432 -e DB_NAME=oya \
+  -e DB_USER=postgres -e DB_PASSWORD=postgres \
   -e OYA_JWT_SECRET="production-secret-key-at-least-32-characters" \
   oya:integration
 ```
@@ -128,32 +136,16 @@ See [resources/api/spec.yaml](resources/api/spec.yaml) for the complete OpenAPI 
 
 ### 1. Authentication
 
-Authenticate with username and password to obtain a JWT bearer token:
+OYA uses Google OpenID Connect only. Create a Google OAuth client with `http://localhost:5173/api/v1/auth/google/callback` registered as its redirect URI. Vite proxies that callback to the backend, allowing the browser to keep the refresh cookie on the frontend origin. Add a trusted email directly in PostgreSQL, then configure the client credentials and open `http://localhost:5173` in a browser:
 
-```sh
-curl -i -X POST http://localhost:8080/api/v1/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username":"testuser","password":"password123"}'
+```sql
+INSERT INTO whitelisted_users (email, whitelisted)
+VALUES ('trusted@example.com', true);
 ```
 
-Response:
+Google redirects back to the local frontend after successful sign-in and sets an `HttpOnly` refresh cookie. The frontend calls `POST /api/v1/auth/refresh` to receive a short-lived bearer token held only in memory. Include that token in protected requests: `-H 'Authorization: Bearer <JWT_TOKEN>'`.
 
-```json
-{
-  "data": {
-    "token": "<JWT_TOKEN>",
-    "token_type": "Bearer",
-    "user": {
-      "public_id": "01946c10-...",
-      "email": "user@example.com",
-      "username": "testuser",
-      "display_name": "Test User"
-    }
-  }
-}
-```
-
-Include the token in all protected requests: `-H 'Authorization: Bearer <JWT_TOKEN>'`.
+`POST /api/v1/auth/logout` revokes the current refresh session and clears its cookie. Setting `whitelisted = false` or soft-deleting a whitelist row blocks the user's next protected request immediately.
 
 ### 2. Boards
 

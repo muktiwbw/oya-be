@@ -2,38 +2,35 @@ package user_test
 
 import (
 	"context"
+	"net/url"
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/bcrypt"
-
 	"oya-be/internal/user"
 )
 
-type mockUserRepo struct {
-	users map[string]user.User
+type repository struct {
+	allowed      bool
+	users        map[string]user.User
+	sessions     map[string]user.AuthSession
+	transactions map[string]user.OAuthTransaction
 }
 
-func (m *mockUserRepo) GetUserByUsername(ctx context.Context, username string) (user.User, error) {
-	if u, ok := m.users[username]; ok {
-		return u, nil
+func newRepository(allowed bool) *repository {
+	return &repository{allowed: allowed, users: map[string]user.User{}, sessions: map[string]user.AuthSession{}, transactions: map[string]user.OAuthTransaction{}}
+}
+
+func (r *repository) GetUserByGoogleSubject(_ context.Context, subject string) (user.User, error) {
+	u, ok := r.users[subject]
+	if !ok {
+		return user.User{}, user.ErrUserNotFound
 	}
-	return user.User{}, user.ErrUserNotFound
+	return u, nil
 }
 
-func (m *mockUserRepo) GetUserByPublicID(ctx context.Context, publicID string) (user.User, error) {
-	for _, u := range m.users {
-		if u.PublicID == publicID {
-			return u, nil
-		}
-	}
-	return user.User{}, user.ErrUserNotFound
-}
-
-func (m *mockUserRepo) GetUserByID(ctx context.Context, id int64) (user.User, error) {
-	for _, u := range m.users {
+func (r *repository) GetUserByID(_ context.Context, id int64) (user.User, error) {
+	for _, u := range r.users {
 		if u.ID == id {
 			return u, nil
 		}
@@ -41,48 +38,143 @@ func (m *mockUserRepo) GetUserByID(ctx context.Context, id int64) (user.User, er
 	return user.User{}, user.ErrUserNotFound
 }
 
-func (m *mockUserRepo) CreateUser(ctx context.Context, u user.User) (user.User, error) {
-	m.users[u.Username] = u
+func (r *repository) CreateGoogleUser(_ context.Context, u user.User) (user.User, error) {
+	u.ID = int64(len(r.users) + 1)
+	r.users[u.GoogleSubject] = u
 	return u, nil
 }
 
-type mockTokens struct{}
-
-func (mockTokens) Generate(userID int64, userPublicID, username string) (string, error) {
-	return "mock-jwt-token-" + username, nil
+func (r *repository) IsUserWhitelisted(context.Context, int64) (bool, error) { return r.allowed, nil }
+func (r *repository) IsEmailWhitelisted(context.Context, string) (bool, error) {
+	return r.allowed, nil
 }
 
-func TestUserService_Login(t *testing.T) {
-	hash, err := bcrypt.GenerateFromPassword([]byte("secret123"), bcrypt.DefaultCost)
-	require.NoError(t, err)
+func (r *repository) CreateSession(_ context.Context, session user.AuthSession) error {
+	r.sessions[session.TokenHash] = session
+	return nil
+}
 
-	repo := &mockUserRepo{
-		users: map[string]user.User{
-			"cosmicg": {
-				ID:          1,
-				PublicID:    "user-uuid-1",
-				Username:    "cosmicg",
-				Password:    string(hash),
-				DisplayName: "Cosmic G",
-				CreatedAt:   time.Now(),
-				UpdatedAt:   time.Now(),
-			},
-		},
+func (r *repository) GetSession(_ context.Context, hash string) (user.AuthSession, error) {
+	session, ok := r.sessions[hash]
+	if !ok {
+		return user.AuthSession{}, user.ErrInvalidSession
+	}
+	return session, nil
+}
+
+func (r *repository) RotateSession(_ context.Context, previousHash string, next user.AuthSession, now time.Time) error {
+	previous, ok := r.sessions[previousHash]
+	if !ok || previous.RevokedAt != nil || !previous.ExpiresAt.After(now) {
+		return user.ErrInvalidSession
+	}
+	previous.RevokedAt = &now
+	r.sessions[previousHash] = previous
+	r.sessions[next.TokenHash] = next
+	return nil
+}
+
+func (r *repository) RevokeSession(_ context.Context, hash string) error {
+	session, ok := r.sessions[hash]
+	if !ok {
+		return user.ErrInvalidSession
+	}
+	now := time.Now().UTC()
+	session.RevokedAt = &now
+	r.sessions[hash] = session
+	return nil
+}
+
+func (r *repository) DeleteExpiredSessions(context.Context, time.Time) error { return nil }
+
+func (r *repository) CreateOAuthTransaction(_ context.Context, transaction user.OAuthTransaction) error {
+	r.transactions[transaction.State] = transaction
+	return nil
+}
+
+func (r *repository) ConsumeOAuthTransaction(_ context.Context, state string, now time.Time) (user.OAuthTransaction, error) {
+	transaction, ok := r.transactions[state]
+	if !ok || !transaction.ExpiresAt.After(now) {
+		return user.OAuthTransaction{}, user.ErrAccessDenied
+	}
+	delete(r.transactions, state)
+	return transaction, nil
+}
+
+func (r *repository) DeleteExpiredOAuthTransactions(context.Context, time.Time) error { return nil }
+
+type tokens struct{}
+
+func (tokens) Generate(int64, string) (string, error) { return "access", nil }
+
+type googleProvider struct{ identity user.GoogleIdentity }
+
+func (p googleProvider) AuthorizationURL(state, _, _ string) string {
+	return "https://accounts.google.test/auth?state=" + url.QueryEscape(state)
+}
+
+func (p googleProvider) Exchange(context.Context, string, string, string) (user.GoogleIdentity, error) {
+	return p.identity, nil
+}
+
+func TestGoogleDisabled(t *testing.T) {
+	svc := user.NewService(newRepository(true), tokens{}, nil, time.Hour)
+	_, err := svc.StartGoogle(context.Background())
+	require.ErrorIs(t, err, user.ErrGoogleDisabled)
+}
+
+func TestCompleteGoogleCreatesSessionForWhitelistedEmail(t *testing.T) {
+	repository := newRepository(true)
+	svc := user.NewService(repository, tokens{}, googleProvider{identity: user.GoogleIdentity{Subject: "google-subject", Email: "Trusted@Example.com", EmailVerified: true, DisplayName: "Trusted User"}}, time.Hour)
+
+	_, err := svc.StartGoogle(context.Background())
+	require.NoError(t, err)
+	var state string
+	for state = range repository.transactions {
+		break
 	}
 
-	svc := user.NewService(repo, mockTokens{})
-
-	// Successful login
-	token, u, err := svc.Login(context.Background(), "cosmicg", "secret123")
+	access, refresh, signedInUser, err := svc.CompleteGoogle(context.Background(), state, "authorization-code")
 	require.NoError(t, err)
-	assert.Equal(t, "mock-jwt-token-cosmicg", token)
-	assert.Equal(t, "user-uuid-1", u.PublicID)
+	require.Equal(t, "access", access)
+	require.NotEmpty(t, refresh)
+	require.Equal(t, "trusted@example.com", signedInUser.Email)
+	require.Equal(t, "google-subject", signedInUser.GoogleSubject)
+	require.Len(t, repository.sessions, 1)
+}
 
-	// Invalid password
-	_, _, err = svc.Login(context.Background(), "cosmicg", "wrongpass")
-	require.ErrorIs(t, err, user.ErrInvalidCredentials)
+func TestCompleteGoogleRejectsNonWhitelistedEmail(t *testing.T) {
+	repository := newRepository(false)
+	svc := user.NewService(repository, tokens{}, googleProvider{identity: user.GoogleIdentity{Subject: "google-subject", Email: "denied@example.com", EmailVerified: true}}, time.Hour)
+	_, err := svc.StartGoogle(context.Background())
+	require.NoError(t, err)
+	var state string
+	for state = range repository.transactions {
+		break
+	}
 
-	// Unknown user
-	_, _, err = svc.Login(context.Background(), "unknown", "secret123")
-	require.ErrorIs(t, err, user.ErrInvalidCredentials)
+	_, _, _, err = svc.CompleteGoogle(context.Background(), state, "authorization-code")
+	require.ErrorIs(t, err, user.ErrAccessDenied)
+	require.Empty(t, repository.users)
+	require.Empty(t, repository.sessions)
+}
+
+func TestRefreshRejectsRevokedSessionAfterWhitelistIsDisabled(t *testing.T) {
+	repository := newRepository(true)
+	svc := user.NewService(repository, tokens{}, googleProvider{identity: user.GoogleIdentity{Subject: "google-subject", Email: "trusted@example.com", EmailVerified: true}}, time.Hour)
+	access, refresh, _, err := svc.Refresh(context.Background(), "missing")
+	require.ErrorIs(t, err, user.ErrInvalidSession)
+	require.Empty(t, access)
+	require.Empty(t, refresh)
+
+	_, err = svc.StartGoogle(context.Background())
+	require.NoError(t, err)
+	var state string
+	for state = range repository.transactions {
+		break
+	}
+	_, refresh, _, err = svc.CompleteGoogle(context.Background(), state, "authorization-code")
+	require.NoError(t, err)
+	repository.allowed = false
+	_, _, _, err = svc.Refresh(context.Background(), refresh)
+	require.ErrorIs(t, err, user.ErrAccessDenied)
 }

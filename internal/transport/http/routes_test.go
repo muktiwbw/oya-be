@@ -24,7 +24,7 @@ func request(h http.Handler, method, path, body, key string) *httptest.ResponseR
 }
 
 func TestRouteErrorsAndAllowedMethods(t *testing.T) {
-	h := New(nil, nil, nil, nil, func(context.Context) error { return nil }, 65536, "dev", "unknown")
+	h := New(nil, nil, nil, nil, AuthSettings{}, func(context.Context) error { return nil }, 65536, "dev", "unknown")
 	id := "018f4b7e-3b75-7e1f-b5d5-2b2d7b0a7f12"
 	for _, tc := range []struct {
 		method, path string
@@ -66,7 +66,7 @@ func TestRouteErrorsAndAllowedMethods(t *testing.T) {
 }
 
 func TestRouterRecoveryUsesJSONError(t *testing.T) {
-	h := New(nil, nil, nil, nil, func(context.Context) error { panic("private failure details") }, 65536, "dev", "unknown")
+	h := New(nil, nil, nil, nil, AuthSettings{}, func(context.Context) error { panic("private failure details") }, 65536, "dev", "unknown")
 	w := request(h, http.MethodGet, "/readyz", "", "")
 	require.Equal(t, http.StatusInternalServerError, w.Code)
 	assert.JSONEq(t, `{"error":{"code":"internal_error","message":"internal server error"}}`, w.Body.String())

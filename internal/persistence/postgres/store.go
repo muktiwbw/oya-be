@@ -14,11 +14,24 @@ type Store struct {
 	queries *sqlc.Queries
 }
 
-func Open(ctx context.Context, databaseURL string) (*Store, error) {
-	cfg, err := pgxpool.ParseConfig(databaseURL)
+type ConnectionConfig struct {
+	Host     string
+	Port     int
+	Database string
+	User     string
+	Password string
+}
+
+func Open(ctx context.Context, connection ConnectionConfig) (*Store, error) {
+	cfg, err := pgxpool.ParseConfig("sslmode=disable")
 	if err != nil {
-		return nil, fmt.Errorf("parse database url: %w", err)
+		return nil, fmt.Errorf("create postgres config: %w", err)
 	}
+	cfg.ConnConfig.Host = connection.Host
+	cfg.ConnConfig.Port = uint16(connection.Port)
+	cfg.ConnConfig.Database = connection.Database
+	cfg.ConnConfig.User = connection.User
+	cfg.ConnConfig.Password = connection.Password
 
 	pool, err := pgxpool.NewWithConfig(ctx, cfg)
 	if err != nil {

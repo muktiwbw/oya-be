@@ -38,6 +38,13 @@ func (a *API) authenticate(next http.Handler) http.Handler {
 			writeProblem(w, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
 			return
 		}
+		if a.users != nil {
+			allowed, err := a.users.IsWhitelisted(r.Context(), claims.UserID)
+			if err != nil || !allowed {
+				writeProblem(w, http.StatusUnauthorized, "unauthorized", "invalid or expired token")
+				return
+			}
+		}
 
 		ctx := ContextWithUser(r.Context(), claims)
 		next.ServeHTTP(w, r.WithContext(ctx))

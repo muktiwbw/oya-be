@@ -15,7 +15,7 @@ import (
 
 func TestAuthMiddleware(t *testing.T) {
 	tm := auth.NewTokenManager("test-secret-key-that-is-long-enough", time.Hour)
-	h := New(nil, nil, nil, tm, func(context.Context) error { return nil }, 65536, "dev", "unknown")
+	h := New(nil, nil, nil, tm, AuthSettings{}, func(context.Context) error { return nil }, 65536, "dev", "unknown")
 
 	// Missing authorization header
 	w := request(h, "GET", "/api/v1/boards", "", "")
@@ -40,7 +40,7 @@ func TestAuthMiddleware(t *testing.T) {
 
 	// Expired token
 	expiredTM := auth.NewTokenManager("test-secret-key-that-is-long-enough", -time.Hour)
-	expiredToken, err := expiredTM.Generate(1, "u-1", "user")
+	expiredToken, err := expiredTM.Generate(1, "u-1")
 	require.NoError(t, err)
 
 	r = httptest.NewRequest("GET", "/api/v1/boards", nil)
@@ -51,15 +51,11 @@ func TestAuthMiddleware(t *testing.T) {
 	assert.Contains(t, w.Body.String(), `"code":"unauthorized"`)
 }
 
-func TestLoginValidation(t *testing.T) {
+func TestGoogleStartWhenUnconfigured(t *testing.T) {
 	tm := auth.NewTokenManager("test-secret-key-that-is-long-enough", time.Hour)
-	h := New(nil, nil, nil, tm, func(context.Context) error { return nil }, 65536, "dev", "unknown")
+	h := New(nil, nil, nil, tm, AuthSettings{}, func(context.Context) error { return nil }, 65536, "dev", "unknown")
 
-	w := request(h, "POST", "/api/v1/auth/login", `{"username":""}`, "")
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), `"code":"validation_error"`)
-
-	w = request(h, "POST", "/api/v1/auth/login", `malformed json`, "")
-	assert.Equal(t, http.StatusBadRequest, w.Code)
-	assert.Contains(t, w.Body.String(), `"code":"invalid_json"`)
+	w := request(h, "GET", "/api/v1/auth/google", "", "")
+	assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+	assert.Contains(t, w.Body.String(), `"code":"service_unavailable"`)
 }
