@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
 )
 
 var (
@@ -15,7 +16,6 @@ var (
 type Claims struct {
 	UserPublicID string `json:"user_public_id"`
 	UserID       int64  `json:"user_id"`
-	Username     string `json:"username"`
 	jwt.RegisteredClaims
 }
 
@@ -31,14 +31,14 @@ func NewTokenManager(secret string, expiration time.Duration) *TokenManager {
 	}
 }
 
-func (m *TokenManager) Generate(userID int64, userPublicID, username string) (string, error) {
+func (m *TokenManager) Generate(userID int64, userPublicID string) (string, error) {
 	now := time.Now().UTC()
 	claims := Claims{
 		UserPublicID: userPublicID,
 		UserID:       userID,
-		Username:     username,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Subject:   userPublicID,
+			ID:        uuid.NewString(),
 			IssuedAt:  jwt.NewNumericDate(now),
 			ExpiresAt: jwt.NewNumericDate(now.Add(m.expiration)),
 		},

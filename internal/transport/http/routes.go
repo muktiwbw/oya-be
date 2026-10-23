@@ -20,17 +20,29 @@ type API struct {
 	ready           func(context.Context) error
 	bodyLimit       int64
 	version, commit string
+	auth            AuthSettings
 }
+
+type AuthSettings struct {
+	FrontendRedirectURL string
+	RefreshCookieSecure bool
+}
+
+const defaultFrontendRedirectURL = "http://localhost:5173/auth/callback"
 
 func New(
 	taskService *task.Service,
 	userService *user.Service,
 	boardService *board.Service,
 	tokenManager *auth.TokenManager,
+	authSettings AuthSettings,
 	ready func(context.Context) error,
 	limit int64,
 	version, commit string,
 ) http.Handler {
+	if authSettings.FrontendRedirectURL == "" {
+		authSettings.FrontendRedirectURL = defaultFrontendRedirectURL
+	}
 	a := &API{
 		service:   taskService,
 		users:     userService,
@@ -40,6 +52,7 @@ func New(
 		bodyLimit: limit,
 		version:   version,
 		commit:    commit,
+		auth:      authSettings,
 	}
 	router := chi.NewRouter()
 	router.Use(responseHeaders, recoverJSON)
@@ -73,12 +86,16 @@ func New(
 	router.Get("/version", a.versionInfo)
 
 	router.Route("/api/v1", func(r chi.Router) {
-		// Public auth endpoints
-		r.Post("/auth/login", a.login)
+		// Public authentication endpoints
+		r.Get("/auth/google", a.startGoogle)
+		r.Get("/auth/google/callback", a.googleCallback)
+		r.Post("/auth/refresh", a.refresh)
 
 		// Protected endpoints
 		r.Group(func(pr chi.Router) {
 			pr.Use(a.authenticate)
+			pr.Post("/auth/logout", a.logout)
+			pr.Get("/auth/me", a.me)
 
 			// Board endpoints
 			pr.Post("/boards", a.createBoard)

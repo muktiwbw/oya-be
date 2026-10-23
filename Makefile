@@ -4,15 +4,17 @@ APP_IMAGE ?= oya:integration
 TEST_IMAGE ?= oya-integration:latest
 APP_BINARY ?= bin/oya
 DOCKER_SOCKET ?= /var/run/docker.sock
-TESTCONTAINERS_HOST ?= host.docker.internal
+TESTCONTAINERS_HOST ?= localhost
 MOCKERY_VERSION ?= v3.5.5
 MOCKERY ?= $(GO) run github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
 SQLC_VERSION ?= v1.27.0
 SQLC ?= $(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
 FLYWAY_IMAGE ?= flyway/flyway:latest
-FLYWAY_URL ?= jdbc:postgresql://localhost:15432/oya?sslmode=disable
-FLYWAY_USER ?= postgres
-FLYWAY_PASSWORD ?= postgres
+DB_HOST ?= localhost
+DB_PORT ?= 15432
+DB_NAME ?= oya
+DB_USER ?= postgres
+DB_PASSWORD ?= postgres
 
 .PHONY: help fmt vet test test-race generate-mocks sqlc integration-test check build run migrate dev-db dev-db-stop docker-build
 
@@ -55,10 +57,11 @@ integration-test:
 	$(DOCKER) build -t $(APP_IMAGE) .
 	$(DOCKER) build -f Dockerfile.test -t $(TEST_IMAGE) .
 	$(DOCKER) run --rm \
+		--network host \
 		-v "$(DOCKER_SOCKET)":/var/run/docker.sock \
-		--add-host=host.docker.internal:host-gateway \
 		-e TESTCONTAINERS_HOST_OVERRIDE=$(TESTCONTAINERS_HOST) \
 		-e TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
+		-e TESTCONTAINERS_RYUK_DISABLED=true \
 		-e OYA_TEST_IMAGE=$(APP_IMAGE) \
 		$(TEST_IMAGE) \
 		go test -count=1 -tags=integration ./tests/integration/...
@@ -77,7 +80,7 @@ run:
 	$(GO) run ./cmd/oya
 
 migrate:
-	$(DOCKER) run --rm --net=host -v "$$(pwd)/migrations":/flyway/sql $(FLYWAY_IMAGE) -url="$(FLYWAY_URL)" -user=$(FLYWAY_USER) -password=$(FLYWAY_PASSWORD) migrate
+	$(DOCKER) run --rm --net=host -v "$$(pwd)/migrations":/flyway/sql $(FLYWAY_IMAGE) -url="jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable" -user=$(DB_USER) -password=$(DB_PASSWORD) migrate
 
 dev-db:
 	$(DOCKER) compose up -d postgres

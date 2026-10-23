@@ -10,6 +10,8 @@ import (
 func TestHealthcheckArgumentValidation(t *testing.T) {
 	oldArgs := os.Args
 	defer func() { os.Args = oldArgs }()
+	t.Setenv("DB_USER", "postgres")
+	t.Setenv("DB_PASSWORD", "postgres")
 
 	os.Args = []string{"oya", "migrate", "extra"}
 	err := run()

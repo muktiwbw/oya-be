@@ -8,6 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AuthSession struct {
+	ID        int64              `json:"id"`
+	UserID    int64              `json:"user_id"`
+	TokenHash string             `json:"token_hash"`
+	ExpiresAt pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz `json:"created_at"`
+	RevokedAt pgtype.Timestamptz `json:"revoked_at"`
+}
+
 type Board struct {
 	ID          int64              `json:"id"`
 	PublicID    pgtype.UUID        `json:"public_id"`
@@ -27,6 +36,15 @@ type IdempotencyKey struct {
 	CreatedAt      pgtype.Timestamptz `json:"created_at"`
 }
 
+type OauthAuthorizationTransaction struct {
+	State        string             `json:"state"`
+	Nonce        string             `json:"nonce"`
+	CodeVerifier string             `json:"code_verifier"`
+	ExpiresAt    pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt    pgtype.Timestamptz `json:"created_at"`
+	ConsumedAt   pgtype.Timestamptz `json:"consumed_at"`
+}
+
 type Task struct {
 	ID          int64              `json:"id"`
 	PublicID    pgtype.UUID        `json:"public_id"`
@@ -41,12 +59,20 @@ type Task struct {
 }
 
 type User struct {
+	ID            int64              `json:"id"`
+	PublicID      pgtype.UUID        `json:"public_id"`
+	Email         string             `json:"email"`
+	DisplayName   string             `json:"display_name"`
+	CreatedAt     pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+	DeletedAt     pgtype.Timestamptz `json:"deleted_at"`
+	GoogleSubject string             `json:"google_subject"`
+}
+
+type WhitelistedUser struct {
 	ID          int64              `json:"id"`
-	PublicID    pgtype.UUID        `json:"public_id"`
 	Email       string             `json:"email"`
-	Username    string             `json:"username"`
-	Password    string             `json:"password"`
-	DisplayName string             `json:"display_name"`
+	Whitelisted bool               `json:"whitelisted"`
 	CreatedAt   pgtype.Timestamptz `json:"created_at"`
 	UpdatedAt   pgtype.Timestamptz `json:"updated_at"`
 	DeletedAt   pgtype.Timestamptz `json:"deleted_at"`

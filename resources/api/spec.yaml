@@ -56,31 +56,49 @@ paths:
                   version: { type: string, example: dev }
                   commit: { type: string, example: unknown }
         "405": { $ref: "#/components/responses/Error" }
-  /api/v1/auth/login:
-    post:
-      operationId: login
+  /api/v1/auth/google:
+    get:
+      operationId: startGoogleLogin
       security: []
-      description: Authenticate using username and password to obtain a bearer token.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              additionalProperties: false
-              required: [username, password]
-              properties:
-                username: { type: string, minLength: 1 }
-                password: { type: string, minLength: 1 }
+      responses:
+        "302": { description: Redirect to Google authorization. }
+        "503": { $ref: "#/components/responses/Error" }
+  /api/v1/auth/google/callback:
+    get:
+      operationId: completeGoogleLogin
+      security: []
+      parameters:
+        - { in: query, name: state, required: true, schema: { type: string } }
+        - { in: query, name: code, required: true, schema: { type: string } }
+      responses:
+        "302": { description: Redirect to the local frontend callback after success or denial. }
+  /api/v1/auth/refresh:
+    post:
+      operationId: refreshSession
+      security: []
       responses:
         "200":
-          description: Authentication successful.
+          description: Refresh session and return a short-lived bearer token.
           content:
             application/json:
-              schema: { $ref: "#/components/schemas/LoginEnvelope" }
-        "400": { $ref: "#/components/responses/Error" }
+              schema: { $ref: "#/components/schemas/AuthEnvelope" }
         "401": { $ref: "#/components/responses/Error" }
-        "500": { $ref: "#/components/responses/Error" }
+  /api/v1/auth/logout:
+    post:
+      operationId: logout
+      responses:
+        "204": { description: Active refresh session revoked and cookie cleared. }
+        "401": { $ref: "#/components/responses/Error" }
+  /api/v1/auth/me:
+    get:
+      operationId: authenticatedUser
+      responses:
+        "200":
+          description: Authenticated user profile.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UserEnvelope" }
+        "401": { $ref: "#/components/responses/Error" }
   /api/v1/boards:
     post:
       operationId: createBoard
@@ -370,13 +388,12 @@ components:
       enum: [todo, doing, done]
     User:
       type: object
-      required: [public_id, email, username, display_name]
+      required: [public_id, email, display_name]
       properties:
         public_id: { type: string, format: uuid }
         email: { type: string, format: email }
-        username: { type: string }
         display_name: { type: string }
-    LoginEnvelope:
+    AuthEnvelope:
       type: object
       required: [data]
       properties:
@@ -387,6 +404,11 @@ components:
             token: { type: string }
             token_type: { type: string, example: Bearer }
             user: { $ref: "#/components/schemas/User" }
+    UserEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: "#/components/schemas/User" }
     Board:
       type: object
       required: [public_id, title, description, created_at, updated_at]

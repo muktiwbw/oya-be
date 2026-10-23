@@ -17,6 +17,7 @@ import (
 	"oya-be/internal/platform/auth"
 	"oya-be/internal/platform/clock"
 	"oya-be/internal/platform/config"
+	googleauth "oya-be/internal/platform/google"
 	"oya-be/internal/platform/ids"
 	"oya-be/internal/task"
 	httpapi "oya-be/internal/transport/http"
@@ -65,12 +66,12 @@ func run() error {
 		if len(os.Args) != 2 {
 			return fmt.Errorf("usage: oya migrate")
 		}
-		store, err := postgres.Open(ctx, c.DatabaseURL)
+		store, err := postgres.Open(ctx, databaseConnection(c))
 		if err != nil {
 			return fmt.Errorf("check database connection: %w", err)
 		}
 		defer store.Close()
-		slog.Info("database connection verified, run 'make migrate' for flyway migrations", "url", c.DatabaseURL)
+		slog.Info("database connection verified, run 'make migrate' for flyway migrations", "host", c.DatabaseHost, "database", c.DatabaseName)
 		return nil
 	}
 	listener, err := net.Listen("tcp", c.HTTPAddr)
@@ -82,7 +83,7 @@ func run() error {
 }
 
 func serve(ctx context.Context, c config.Config, listener net.Listener) error {
-	store, err := postgres.Open(ctx, c.DatabaseURL)
+	store, err := postgres.Open(ctx, databaseConnection(c))
 	if err != nil {
 		return err
 	}
@@ -96,13 +97,20 @@ func serve(ctx context.Context, c config.Config, listener net.Listener) error {
 	}
 
 	tokenManager := auth.NewTokenManager(c.JWTSecret, c.JWTExpiration)
-	userService := user.NewService(store, tokenManager)
+	var googleProvider user.GoogleProvider
+	if c.GoogleClientID != "" {
+		googleProvider, err = googleauth.New(ctx, c.GoogleClientID, c.GoogleClientSecret, c.GoogleRedirectURL)
+		if err != nil {
+			return err
+		}
+	}
+	userService := user.NewService(store, tokenManager, googleProvider, c.RefreshTTL)
 	idGen := ids.Generator{}
 	boardService := board.NewService(store, idGen)
 	taskService := task.NewService(store, clock.System{}, idGen, c.IdempotencyTTL)
 
 	server := &http.Server{
-		Handler:           httpapi.New(taskService, userService, boardService, tokenManager, ready, c.RequestBodyLimit, version, commit),
+		Handler:           httpapi.New(taskService, userService, boardService, tokenManager, httpapi.AuthSettings{FrontendRedirectURL: c.GoogleFrontendRedirectURL, RefreshCookieSecure: c.RefreshCookieSecure}, ready, c.RequestBodyLimit, version, commit),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       10 * time.Second,
 		WriteTimeout:      15 * time.Second,
@@ -121,4 +129,8 @@ func serve(ctx context.Context, c config.Config, listener net.Listener) error {
 		return err
 	}
 	return <-shutdownDone
+}
+
+func databaseConnection(c config.Config) postgres.ConnectionConfig {
+	return postgres.ConnectionConfig{Host: c.DatabaseHost, Port: c.DatabasePort, Database: c.DatabaseName, User: c.DatabaseUser, Password: c.DatabasePassword}
 }

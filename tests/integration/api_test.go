@@ -21,7 +21,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 	"github.com/testcontainers/testcontainers-go/network"
 	"github.com/testcontainers/testcontainers-go/wait"
-	"golang.org/x/crypto/bcrypt"
+	"oya-be/internal/platform/auth"
 )
 
 func TestEndToEndLifecycle(t *testing.T) {
@@ -35,7 +35,9 @@ func TestEndToEndLifecycle(t *testing.T) {
 	tc.CleanupNetwork(t, nw)
 	require.NoError(t, err)
 
-	migrationsPath, err := filepath.Abs(filepath.Join("..", "..", "migrations", "V1__initial_schema.sql"))
+	initialMigrationPath, err := filepath.Abs(filepath.Join("..", "..", "migrations", "V1__initial_schema.sql"))
+	require.NoError(t, err)
+	googleAuthMigrationPath, err := filepath.Abs(filepath.Join("..", "..", "migrations", "V2__google_sso_sessions.sql"))
 	require.NoError(t, err)
 
 	pgContainer, err := postgres.Run(ctx,
@@ -43,8 +45,9 @@ func TestEndToEndLifecycle(t *testing.T) {
 		postgres.WithDatabase("oya"),
 		postgres.WithUsername("postgres"),
 		postgres.WithPassword("postgres"),
-		postgres.WithInitScripts(migrationsPath),
+		postgres.WithInitScripts(initialMigrationPath, googleAuthMigrationPath),
 		network.WithNetwork([]string{"postgres"}, nw),
+		tc.WithWaitStrategy(wait.ForLog("database system is ready to accept connections").WithOccurrence(2).WithStartupTimeout(time.Minute)),
 	)
 	tc.CleanupContainer(t, pgContainer)
 	require.NoError(t, err)
@@ -52,21 +55,21 @@ func TestEndToEndLifecycle(t *testing.T) {
 	connStr, err := pgContainer.ConnectionString(ctx, "sslmode=disable")
 	require.NoError(t, err)
 
-	// Seed test user fixture directly in the database
+	// Seed a whitelisted Google user directly; external Google callbacks are not part
+	// of this containerized lifecycle test.
 	conn, err := pgx.Connect(ctx, connStr)
 	require.NoError(t, err)
 	defer conn.Close(ctx)
-
-	hash, err := bcrypt.GenerateFromPassword([]byte("password123"), bcrypt.DefaultCost)
-	require.NoError(t, err)
 
 	userUUID, err := uuid.NewV7()
 	require.NoError(t, err)
 
 	_, err = conn.Exec(ctx, `
-		INSERT INTO users (public_id, email, username, password, display_name)
-		VALUES ($1, $2, $3, $4, $5)
-	`, userUUID, "test@example.com", "testuser", string(hash), "Test User")
+		INSERT INTO users (public_id, email, google_subject, display_name)
+		VALUES ($1, $2, $3, $4)
+	`, userUUID, "test@example.com", "google-test-subject", "Test User")
+	require.NoError(t, err)
+	_, err = conn.Exec(ctx, `INSERT INTO whitelisted_users (email, whitelisted) VALUES ($1, true)`, "test@example.com")
 	require.NoError(t, err)
 
 	// Start application container
@@ -76,9 +79,13 @@ func TestEndToEndLifecycle(t *testing.T) {
 			ExposedPorts: []string{"8080/tcp"},
 			Networks:     []string{nw.Name},
 			Env: map[string]string{
-				"OYA_HTTP_ADDR":    ":8080",
-				"OYA_DATABASE_URL": "postgres://postgres:postgres@postgres:5432/oya?sslmode=disable",
-				"OYA_JWT_SECRET":   "test-secret-key-that-is-at-least-32-chars-long",
+				"OYA_HTTP_ADDR":  ":8080",
+				"DB_HOST":        "postgres",
+				"DB_PORT":        "5432",
+				"DB_NAME":        "oya",
+				"DB_USER":        "postgres",
+				"DB_PASSWORD":    "postgres",
+				"OYA_JWT_SECRET": "test-secret-key-that-is-at-least-32-chars-long",
 			},
 			WaitingFor: wait.ForHTTP("/readyz").WithPort("8080/tcp").WithStartupTimeout(time.Minute),
 		},
@@ -95,6 +102,7 @@ func TestEndToEndLifecycle(t *testing.T) {
 	baseURL := fmt.Sprintf("http://%s:%s", host, port.Port())
 	client := http.Client{Timeout: 10 * time.Second}
 
+	tokenManager := auth.NewTokenManager("test-secret-key-that-is-at-least-32-chars-long", 15*time.Minute)
 	var authToken string
 
 	call := func(method, path, body, key string, want int) map[string]any {
@@ -134,13 +142,11 @@ func TestEndToEndLifecycle(t *testing.T) {
 	call("GET", "/api/v1/boards", "", "", 401)
 	call("POST", "/api/v1/tasks", `{"title":"test"}`, "", 401)
 
-	// 3. Login
-	call("POST", "/api/v1/auth/login", `{"username":"testuser","password":"wrongpassword"}`, "", 401)
-	loginRes := call("POST", "/api/v1/auth/login", `{"username":"testuser","password":"password123"}`, "", 200)
-	token, ok := loginRes["data"].(map[string]any)["token"].(string)
-	require.True(t, ok)
-	require.NotEmpty(t, token)
-	authToken = token
+	// 3. Password login has been removed and Google sign-in is disabled without credentials.
+	call("POST", "/api/v1/auth/login", `{}`, "", 404)
+	call("GET", "/api/v1/auth/google", "", "", 503)
+	authToken, err = tokenManager.Generate(1, userUUID.String())
+	require.NoError(t, err)
 
 	// 4. Board CRUD
 	boardCreated := call("POST", "/api/v1/boards", `{"title":"Product Roadmap","description":"Q4 initiatives"}`, "", 201)
