@@ -5,16 +5,26 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+func validBoardID() string {
+	id, err := uuid.NewV7()
+	if err != nil {
+		panic(err)
+	}
+	return id.String()
+}
+
 func TestNormalizeCreate(t *testing.T) {
-	got, err := NormalizeCreate(CreateInput{Title: "  Buy milk  "})
+	boardID := validBoardID()
+	got, err := NormalizeCreate(CreateInput{BoardID: boardID, Title: "  Buy milk  "})
 	require.NoError(t, err)
-	assert.Equal(t, CreateInput{Title: "Buy milk", Status: Todo}, got)
+	assert.Equal(t, CreateInput{BoardID: boardID, Title: "Buy milk", Status: Todo}, got)
 	for _, status := range []Status{Todo, Doing, Done} {
-		got, err := NormalizeCreate(CreateInput{Title: "task", Description: "  unchanged  ", Status: status})
+		got, err := NormalizeCreate(CreateInput{BoardID: boardID, Title: "task", Description: "  unchanged  ", Status: status})
 		require.NoError(t, err)
 		assert.Equal(t, status, got.Status)
 		assert.Equal(t, "  unchanged  ", got.Description)
@@ -22,18 +32,21 @@ func TestNormalizeCreate(t *testing.T) {
 }
 
 func TestCreateValidation(t *testing.T) {
+	boardID := validBoardID()
 	for _, tc := range []struct {
 		name  string
 		input CreateInput
 		valid bool
 	}{
-		{"missing title", CreateInput{}, false},
-		{"whitespace title", CreateInput{Title: " \t\n"}, false},
-		{"unicode title boundary", CreateInput{Title: strings.Repeat("界", 200)}, true},
-		{"unicode title too long", CreateInput{Title: strings.Repeat("界", 201)}, false},
-		{"description boundary", CreateInput{Title: "task", Description: strings.Repeat("界", 2000)}, true},
-		{"description too long", CreateInput{Title: "task", Description: strings.Repeat("界", 2001)}, false},
-		{"unsupported status", CreateInput{Title: "task", Status: "TODO"}, false},
+		{"missing board_id", CreateInput{Title: "task"}, false},
+		{"invalid board_id", CreateInput{BoardID: "invalid-uuid", Title: "task"}, false},
+		{"missing title", CreateInput{BoardID: boardID}, false},
+		{"whitespace title", CreateInput{BoardID: boardID, Title: " \t\n"}, false},
+		{"unicode title boundary", CreateInput{BoardID: boardID, Title: strings.Repeat("界", 200)}, true},
+		{"unicode title too long", CreateInput{BoardID: boardID, Title: strings.Repeat("界", 201)}, false},
+		{"description boundary", CreateInput{BoardID: boardID, Title: "task", Description: strings.Repeat("界", 2000)}, true},
+		{"description too long", CreateInput{BoardID: boardID, Title: "task", Description: strings.Repeat("界", 2001)}, false},
+		{"unsupported status", CreateInput{BoardID: boardID, Title: "task", Status: "TODO"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, err := NormalizeCreate(tc.input)

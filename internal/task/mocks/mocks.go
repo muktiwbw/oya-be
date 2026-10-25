@@ -259,9 +259,72 @@ func (_c *MockTaskRepository_CreateTask_Call) RunAndReturn(run func(context1 con
 	return _c
 }
 
+// DeleteTaskByPublicID provides a mock function for the type MockTaskRepository
+func (_mock *MockTaskRepository) DeleteTaskByPublicID(context1 context.Context, s string, n int64) error {
+	ret := _mock.Called(context1, s, n)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteTaskByPublicID")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64) error); ok {
+		r0 = returnFunc(context1, s, n)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockTaskRepository_DeleteTaskByPublicID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteTaskByPublicID'
+type MockTaskRepository_DeleteTaskByPublicID_Call struct {
+	*mock.Call
+}
+
+// DeleteTaskByPublicID is a helper method to define mock.On call
+//   - context1 context.Context
+//   - s string
+//   - n int64
+func (_e *MockTaskRepository_Expecter) DeleteTaskByPublicID(context1 interface{}, s interface{}, n interface{}) *MockTaskRepository_DeleteTaskByPublicID_Call {
+	return &MockTaskRepository_DeleteTaskByPublicID_Call{Call: _e.mock.On("DeleteTaskByPublicID", context1, s, n)}
+}
+
+func (_c *MockTaskRepository_DeleteTaskByPublicID_Call) Run(run func(context1 context.Context, s string, n int64)) *MockTaskRepository_DeleteTaskByPublicID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockTaskRepository_DeleteTaskByPublicID_Call) Return(err error) *MockTaskRepository_DeleteTaskByPublicID_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockTaskRepository_DeleteTaskByPublicID_Call) RunAndReturn(run func(context1 context.Context, s string, n int64) error) *MockTaskRepository_DeleteTaskByPublicID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetTaskByPublicID provides a mock function for the type MockTaskRepository
-func (_mock *MockTaskRepository) GetTaskByPublicID(context1 context.Context, s string) (task.Task, error) {
-	ret := _mock.Called(context1, s)
+func (_mock *MockTaskRepository) GetTaskByPublicID(context1 context.Context, s string, n int64) (task.Task, error) {
+	ret := _mock.Called(context1, s, n)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetTaskByPublicID")
@@ -269,16 +332,16 @@ func (_mock *MockTaskRepository) GetTaskByPublicID(context1 context.Context, s s
 
 	var r0 task.Task
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (task.Task, error)); ok {
-		return returnFunc(context1, s)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64) (task.Task, error)); ok {
+		return returnFunc(context1, s, n)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string) task.Task); ok {
-		r0 = returnFunc(context1, s)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64) task.Task); ok {
+		r0 = returnFunc(context1, s, n)
 	} else {
 		r0 = ret.Get(0).(task.Task)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
-		r1 = returnFunc(context1, s)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int64) error); ok {
+		r1 = returnFunc(context1, s, n)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -293,11 +356,12 @@ type MockTaskRepository_GetTaskByPublicID_Call struct {
 // GetTaskByPublicID is a helper method to define mock.On call
 //   - context1 context.Context
 //   - s string
-func (_e *MockTaskRepository_Expecter) GetTaskByPublicID(context1 interface{}, s interface{}) *MockTaskRepository_GetTaskByPublicID_Call {
-	return &MockTaskRepository_GetTaskByPublicID_Call{Call: _e.mock.On("GetTaskByPublicID", context1, s)}
+//   - n int64
+func (_e *MockTaskRepository_Expecter) GetTaskByPublicID(context1 interface{}, s interface{}, n interface{}) *MockTaskRepository_GetTaskByPublicID_Call {
+	return &MockTaskRepository_GetTaskByPublicID_Call{Call: _e.mock.On("GetTaskByPublicID", context1, s, n)}
 }
 
-func (_c *MockTaskRepository_GetTaskByPublicID_Call) Run(run func(context1 context.Context, s string)) *MockTaskRepository_GetTaskByPublicID_Call {
+func (_c *MockTaskRepository_GetTaskByPublicID_Call) Run(run func(context1 context.Context, s string, n int64)) *MockTaskRepository_GetTaskByPublicID_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -307,9 +371,14 @@ func (_c *MockTaskRepository_GetTaskByPublicID_Call) Run(run func(context1 conte
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
 		run(
 			arg0,
 			arg1,
+			arg2,
 		)
 	})
 	return _c
@@ -320,82 +389,94 @@ func (_c *MockTaskRepository_GetTaskByPublicID_Call) Return(task1 task.Task, err
 	return _c
 }
 
-func (_c *MockTaskRepository_GetTaskByPublicID_Call) RunAndReturn(run func(context1 context.Context, s string) (task.Task, error)) *MockTaskRepository_GetTaskByPublicID_Call {
+func (_c *MockTaskRepository_GetTaskByPublicID_Call) RunAndReturn(run func(context1 context.Context, s string, n int64) (task.Task, error)) *MockTaskRepository_GetTaskByPublicID_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
-// ListTasks provides a mock function for the type MockTaskRepository
-func (_mock *MockTaskRepository) ListTasks(context1 context.Context, listQuery task.ListQuery) ([]task.Task, error) {
-	ret := _mock.Called(context1, listQuery)
+// ListTasksByBoard provides a mock function for the type MockTaskRepository
+func (_mock *MockTaskRepository) ListTasksByBoard(context1 context.Context, s string, n int64, listQuery task.ListQuery) ([]task.Task, error) {
+	ret := _mock.Called(context1, s, n, listQuery)
 
 	if len(ret) == 0 {
-		panic("no return value specified for ListTasks")
+		panic("no return value specified for ListTasksByBoard")
 	}
 
 	var r0 []task.Task
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, task.ListQuery) ([]task.Task, error)); ok {
-		return returnFunc(context1, listQuery)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64, task.ListQuery) ([]task.Task, error)); ok {
+		return returnFunc(context1, s, n, listQuery)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, task.ListQuery) []task.Task); ok {
-		r0 = returnFunc(context1, listQuery)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64, task.ListQuery) []task.Task); ok {
+		r0 = returnFunc(context1, s, n, listQuery)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]task.Task)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, task.ListQuery) error); ok {
-		r1 = returnFunc(context1, listQuery)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int64, task.ListQuery) error); ok {
+		r1 = returnFunc(context1, s, n, listQuery)
 	} else {
 		r1 = ret.Error(1)
 	}
 	return r0, r1
 }
 
-// MockTaskRepository_ListTasks_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListTasks'
-type MockTaskRepository_ListTasks_Call struct {
+// MockTaskRepository_ListTasksByBoard_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListTasksByBoard'
+type MockTaskRepository_ListTasksByBoard_Call struct {
 	*mock.Call
 }
 
-// ListTasks is a helper method to define mock.On call
+// ListTasksByBoard is a helper method to define mock.On call
 //   - context1 context.Context
+//   - s string
+//   - n int64
 //   - listQuery task.ListQuery
-func (_e *MockTaskRepository_Expecter) ListTasks(context1 interface{}, listQuery interface{}) *MockTaskRepository_ListTasks_Call {
-	return &MockTaskRepository_ListTasks_Call{Call: _e.mock.On("ListTasks", context1, listQuery)}
+func (_e *MockTaskRepository_Expecter) ListTasksByBoard(context1 interface{}, s interface{}, n interface{}, listQuery interface{}) *MockTaskRepository_ListTasksByBoard_Call {
+	return &MockTaskRepository_ListTasksByBoard_Call{Call: _e.mock.On("ListTasksByBoard", context1, s, n, listQuery)}
 }
 
-func (_c *MockTaskRepository_ListTasks_Call) Run(run func(context1 context.Context, listQuery task.ListQuery)) *MockTaskRepository_ListTasks_Call {
+func (_c *MockTaskRepository_ListTasksByBoard_Call) Run(run func(context1 context.Context, s string, n int64, listQuery task.ListQuery)) *MockTaskRepository_ListTasksByBoard_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 task.ListQuery
+		var arg1 string
 		if args[1] != nil {
-			arg1 = args[1].(task.ListQuery)
+			arg1 = args[1].(string)
+		}
+		var arg2 int64
+		if args[2] != nil {
+			arg2 = args[2].(int64)
+		}
+		var arg3 task.ListQuery
+		if args[3] != nil {
+			arg3 = args[3].(task.ListQuery)
 		}
 		run(
 			arg0,
 			arg1,
+			arg2,
+			arg3,
 		)
 	})
 	return _c
 }
 
-func (_c *MockTaskRepository_ListTasks_Call) Return(tasks []task.Task, err error) *MockTaskRepository_ListTasks_Call {
+func (_c *MockTaskRepository_ListTasksByBoard_Call) Return(tasks []task.Task, err error) *MockTaskRepository_ListTasksByBoard_Call {
 	_c.Call.Return(tasks, err)
 	return _c
 }
 
-func (_c *MockTaskRepository_ListTasks_Call) RunAndReturn(run func(context1 context.Context, listQuery task.ListQuery) ([]task.Task, error)) *MockTaskRepository_ListTasks_Call {
+func (_c *MockTaskRepository_ListTasksByBoard_Call) RunAndReturn(run func(context1 context.Context, s string, n int64, listQuery task.ListQuery) ([]task.Task, error)) *MockTaskRepository_ListTasksByBoard_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // UpdateTaskByPublicID provides a mock function for the type MockTaskRepository
-func (_mock *MockTaskRepository) UpdateTaskByPublicID(context1 context.Context, s string, updateTaskInput task.UpdateTaskInput, time1 time.Time) (task.Task, error) {
-	ret := _mock.Called(context1, s, updateTaskInput, time1)
+func (_mock *MockTaskRepository) UpdateTaskByPublicID(context1 context.Context, s string, n int64, updateTaskInput task.UpdateTaskInput, time1 time.Time) (task.Task, error) {
+	ret := _mock.Called(context1, s, n, updateTaskInput, time1)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateTaskByPublicID")
@@ -403,16 +484,16 @@ func (_mock *MockTaskRepository) UpdateTaskByPublicID(context1 context.Context, 
 
 	var r0 task.Task
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, task.UpdateTaskInput, time.Time) (task.Task, error)); ok {
-		return returnFunc(context1, s, updateTaskInput, time1)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64, task.UpdateTaskInput, time.Time) (task.Task, error)); ok {
+		return returnFunc(context1, s, n, updateTaskInput, time1)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, task.UpdateTaskInput, time.Time) task.Task); ok {
-		r0 = returnFunc(context1, s, updateTaskInput, time1)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64, task.UpdateTaskInput, time.Time) task.Task); ok {
+		r0 = returnFunc(context1, s, n, updateTaskInput, time1)
 	} else {
 		r0 = ret.Get(0).(task.Task)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, task.UpdateTaskInput, time.Time) error); ok {
-		r1 = returnFunc(context1, s, updateTaskInput, time1)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int64, task.UpdateTaskInput, time.Time) error); ok {
+		r1 = returnFunc(context1, s, n, updateTaskInput, time1)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -427,13 +508,14 @@ type MockTaskRepository_UpdateTaskByPublicID_Call struct {
 // UpdateTaskByPublicID is a helper method to define mock.On call
 //   - context1 context.Context
 //   - s string
+//   - n int64
 //   - updateTaskInput task.UpdateTaskInput
 //   - time1 time.Time
-func (_e *MockTaskRepository_Expecter) UpdateTaskByPublicID(context1 interface{}, s interface{}, updateTaskInput interface{}, time1 interface{}) *MockTaskRepository_UpdateTaskByPublicID_Call {
-	return &MockTaskRepository_UpdateTaskByPublicID_Call{Call: _e.mock.On("UpdateTaskByPublicID", context1, s, updateTaskInput, time1)}
+func (_e *MockTaskRepository_Expecter) UpdateTaskByPublicID(context1 interface{}, s interface{}, n interface{}, updateTaskInput interface{}, time1 interface{}) *MockTaskRepository_UpdateTaskByPublicID_Call {
+	return &MockTaskRepository_UpdateTaskByPublicID_Call{Call: _e.mock.On("UpdateTaskByPublicID", context1, s, n, updateTaskInput, time1)}
 }
 
-func (_c *MockTaskRepository_UpdateTaskByPublicID_Call) Run(run func(context1 context.Context, s string, updateTaskInput task.UpdateTaskInput, time1 time.Time)) *MockTaskRepository_UpdateTaskByPublicID_Call {
+func (_c *MockTaskRepository_UpdateTaskByPublicID_Call) Run(run func(context1 context.Context, s string, n int64, updateTaskInput task.UpdateTaskInput, time1 time.Time)) *MockTaskRepository_UpdateTaskByPublicID_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -443,19 +525,24 @@ func (_c *MockTaskRepository_UpdateTaskByPublicID_Call) Run(run func(context1 co
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
-		var arg2 task.UpdateTaskInput
+		var arg2 int64
 		if args[2] != nil {
-			arg2 = args[2].(task.UpdateTaskInput)
+			arg2 = args[2].(int64)
 		}
-		var arg3 time.Time
+		var arg3 task.UpdateTaskInput
 		if args[3] != nil {
-			arg3 = args[3].(time.Time)
+			arg3 = args[3].(task.UpdateTaskInput)
+		}
+		var arg4 time.Time
+		if args[4] != nil {
+			arg4 = args[4].(time.Time)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -466,14 +553,14 @@ func (_c *MockTaskRepository_UpdateTaskByPublicID_Call) Return(task1 task.Task, 
 	return _c
 }
 
-func (_c *MockTaskRepository_UpdateTaskByPublicID_Call) RunAndReturn(run func(context1 context.Context, s string, updateTaskInput task.UpdateTaskInput, time1 time.Time) (task.Task, error)) *MockTaskRepository_UpdateTaskByPublicID_Call {
+func (_c *MockTaskRepository_UpdateTaskByPublicID_Call) RunAndReturn(run func(context1 context.Context, s string, n int64, updateTaskInput task.UpdateTaskInput, time1 time.Time) (task.Task, error)) *MockTaskRepository_UpdateTaskByPublicID_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // UpdateTaskStatusByPublicID provides a mock function for the type MockTaskRepository
-func (_mock *MockTaskRepository) UpdateTaskStatusByPublicID(context1 context.Context, s string, updateStatusInput task.UpdateStatusInput, time1 time.Time) (task.Task, error) {
-	ret := _mock.Called(context1, s, updateStatusInput, time1)
+func (_mock *MockTaskRepository) UpdateTaskStatusByPublicID(context1 context.Context, s string, n int64, updateStatusInput task.UpdateStatusInput, time1 time.Time) (task.Task, error) {
+	ret := _mock.Called(context1, s, n, updateStatusInput, time1)
 
 	if len(ret) == 0 {
 		panic("no return value specified for UpdateTaskStatusByPublicID")
@@ -481,16 +568,16 @@ func (_mock *MockTaskRepository) UpdateTaskStatusByPublicID(context1 context.Con
 
 	var r0 task.Task
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, task.UpdateStatusInput, time.Time) (task.Task, error)); ok {
-		return returnFunc(context1, s, updateStatusInput, time1)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64, task.UpdateStatusInput, time.Time) (task.Task, error)); ok {
+		return returnFunc(context1, s, n, updateStatusInput, time1)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, task.UpdateStatusInput, time.Time) task.Task); ok {
-		r0 = returnFunc(context1, s, updateStatusInput, time1)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, int64, task.UpdateStatusInput, time.Time) task.Task); ok {
+		r0 = returnFunc(context1, s, n, updateStatusInput, time1)
 	} else {
 		r0 = ret.Get(0).(task.Task)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, task.UpdateStatusInput, time.Time) error); ok {
-		r1 = returnFunc(context1, s, updateStatusInput, time1)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, int64, task.UpdateStatusInput, time.Time) error); ok {
+		r1 = returnFunc(context1, s, n, updateStatusInput, time1)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -505,13 +592,14 @@ type MockTaskRepository_UpdateTaskStatusByPublicID_Call struct {
 // UpdateTaskStatusByPublicID is a helper method to define mock.On call
 //   - context1 context.Context
 //   - s string
+//   - n int64
 //   - updateStatusInput task.UpdateStatusInput
 //   - time1 time.Time
-func (_e *MockTaskRepository_Expecter) UpdateTaskStatusByPublicID(context1 interface{}, s interface{}, updateStatusInput interface{}, time1 interface{}) *MockTaskRepository_UpdateTaskStatusByPublicID_Call {
-	return &MockTaskRepository_UpdateTaskStatusByPublicID_Call{Call: _e.mock.On("UpdateTaskStatusByPublicID", context1, s, updateStatusInput, time1)}
+func (_e *MockTaskRepository_Expecter) UpdateTaskStatusByPublicID(context1 interface{}, s interface{}, n interface{}, updateStatusInput interface{}, time1 interface{}) *MockTaskRepository_UpdateTaskStatusByPublicID_Call {
+	return &MockTaskRepository_UpdateTaskStatusByPublicID_Call{Call: _e.mock.On("UpdateTaskStatusByPublicID", context1, s, n, updateStatusInput, time1)}
 }
 
-func (_c *MockTaskRepository_UpdateTaskStatusByPublicID_Call) Run(run func(context1 context.Context, s string, updateStatusInput task.UpdateStatusInput, time1 time.Time)) *MockTaskRepository_UpdateTaskStatusByPublicID_Call {
+func (_c *MockTaskRepository_UpdateTaskStatusByPublicID_Call) Run(run func(context1 context.Context, s string, n int64, updateStatusInput task.UpdateStatusInput, time1 time.Time)) *MockTaskRepository_UpdateTaskStatusByPublicID_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -521,19 +609,24 @@ func (_c *MockTaskRepository_UpdateTaskStatusByPublicID_Call) Run(run func(conte
 		if args[1] != nil {
 			arg1 = args[1].(string)
 		}
-		var arg2 task.UpdateStatusInput
+		var arg2 int64
 		if args[2] != nil {
-			arg2 = args[2].(task.UpdateStatusInput)
+			arg2 = args[2].(int64)
 		}
-		var arg3 time.Time
+		var arg3 task.UpdateStatusInput
 		if args[3] != nil {
-			arg3 = args[3].(time.Time)
+			arg3 = args[3].(task.UpdateStatusInput)
+		}
+		var arg4 time.Time
+		if args[4] != nil {
+			arg4 = args[4].(time.Time)
 		}
 		run(
 			arg0,
 			arg1,
 			arg2,
 			arg3,
+			arg4,
 		)
 	})
 	return _c
@@ -544,7 +637,7 @@ func (_c *MockTaskRepository_UpdateTaskStatusByPublicID_Call) Return(task1 task.
 	return _c
 }
 
-func (_c *MockTaskRepository_UpdateTaskStatusByPublicID_Call) RunAndReturn(run func(context1 context.Context, s string, updateStatusInput task.UpdateStatusInput, time1 time.Time) (task.Task, error)) *MockTaskRepository_UpdateTaskStatusByPublicID_Call {
+func (_c *MockTaskRepository_UpdateTaskStatusByPublicID_Call) RunAndReturn(run func(context1 context.Context, s string, n int64, updateStatusInput task.UpdateStatusInput, time1 time.Time) (task.Task, error)) *MockTaskRepository_UpdateTaskStatusByPublicID_Call {
 	_c.Call.Return(run)
 	return _c
 }

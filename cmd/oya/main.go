@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -13,12 +12,16 @@ import (
 	"syscall"
 	"time"
 
-	"oya-be/internal/persistence/sqlite"
+	"oya-be/internal/board"
+	"oya-be/internal/persistence/postgres"
+	"oya-be/internal/platform/auth"
 	"oya-be/internal/platform/clock"
 	"oya-be/internal/platform/config"
+	googleauth "oya-be/internal/platform/google"
 	"oya-be/internal/platform/ids"
 	"oya-be/internal/task"
 	httpapi "oya-be/internal/transport/http"
+	"oya-be/internal/user"
 )
 
 var version = "dev"
@@ -63,14 +66,12 @@ func run() error {
 		if len(os.Args) != 2 {
 			return fmt.Errorf("usage: oya migrate")
 		}
-		store, err := sqlite.Open(ctx, c.DBPath)
+		store, err := postgres.Open(ctx, databaseConnection(c))
 		if err != nil {
-			return fmt.Errorf("migrate database: %w", err)
+			return fmt.Errorf("check database connection: %w", err)
 		}
-		if err := store.Close(); err != nil {
-			return fmt.Errorf("close migrated database: %w", err)
-		}
-		slog.Info("database migrations complete", "path", c.DBPath)
+		defer store.Close()
+		slog.Info("database connection verified, run 'make migrate' for flyway migrations", "host", c.DatabaseHost, "database", c.DatabaseName)
 		return nil
 	}
 	listener, err := net.Listen("tcp", c.HTTPAddr)
@@ -82,7 +83,7 @@ func run() error {
 }
 
 func serve(ctx context.Context, c config.Config, listener net.Listener) error {
-	store, err := sqlite.Open(ctx, c.DBPath)
+	store, err := postgres.Open(ctx, databaseConnection(c))
 	if err != nil {
 		return err
 	}
@@ -94,31 +95,42 @@ func serve(ctx context.Context, c config.Config, listener net.Listener) error {
 		}
 		return store.Ready(ctx)
 	}
-	service := task.NewService(store, clock.System{}, ids.Generator{}, c.IdempotencyTTL)
-	server := &http.Server{Handler: httpapi.New(service, ready, c.RequestBodyLimit, version, commit), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+
+	tokenManager := auth.NewTokenManager(c.JWTSecret, c.JWTExpiration)
+	var googleProvider user.GoogleProvider
+	if c.GoogleClientID != "" {
+		googleProvider, err = googleauth.New(ctx, c.GoogleClientID, c.GoogleClientSecret, c.GoogleRedirectURL)
+		if err != nil {
+			return err
+		}
+	}
+	userService := user.NewService(store, tokenManager, googleProvider, c.RefreshTTL)
+	idGen := ids.Generator{}
+	boardService := board.NewService(store, idGen)
+	taskService := task.NewService(store, clock.System{}, idGen, c.IdempotencyTTL)
+
+	server := &http.Server{
+		Handler:           httpapi.New(taskService, userService, boardService, tokenManager, httpapi.AuthSettings{FrontendRedirectURL: c.GoogleFrontendRedirectURL, RefreshCookieSecure: c.RefreshCookieSecure}, ready, c.RequestBodyLimit, version, commit),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
 	shutdownDone := make(chan error, 1)
 	go func() {
-		select {
-		case <-ctx.Done():
-			stopping.Store(true)
-			slog.Info("shutdown started")
-			shutdownCtx, cancel := context.WithTimeout(context.Background(), c.ShutdownTimeout)
-			defer cancel()
-			err := server.Shutdown(shutdownCtx)
-			if err != nil {
-				server.Close()
-			}
-			shutdownDone <- err
-		case <-shutdownDone:
-		}
+		<-ctx.Done()
+		stopping.Store(true)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), c.ShutdownTimeout)
+		defer cancel()
+		shutdownDone <- server.Shutdown(shutdownCtx)
 	}()
-	slog.Info("server listening", "address", listener.Addr().String(), "version", version)
-	err = server.Serve(listener)
-	if !errors.Is(err, http.ErrServerClosed) {
-		shutdownDone <- nil
+	slog.Info("server listening", "addr", listener.Addr().String())
+	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
 		return err
 	}
-	err = <-shutdownDone
-	slog.Info("shutdown complete")
-	return err
+	return <-shutdownDone
+}
+
+func databaseConnection(c config.Config) postgres.ConnectionConfig {
+	return postgres.ConnectionConfig{Host: c.DatabaseHost, Port: c.DatabasePort, Database: c.DatabaseName, User: c.DatabaseUser, Password: c.DatabasePassword}
 }
