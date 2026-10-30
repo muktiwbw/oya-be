@@ -71,7 +71,7 @@ func run() error {
 			return fmt.Errorf("check database connection: %w", err)
 		}
 		defer store.Close()
-		slog.Info("database connection verified, run 'make migrate' for flyway migrations", "host", c.DatabaseHost, "database", c.DatabaseName)
+		slog.Info("database connection verified, run 'make migrate' for Goose migrations", "host", c.DatabaseHost, "database", c.DatabaseName)
 		return nil
 	}
 	listener, err := net.Listen("tcp", c.HTTPAddr)

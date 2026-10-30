@@ -1,3 +1,5 @@
+-- +goose Up
+
 TRUNCATE TABLE users CASCADE;
 
 DROP INDEX uq_users_username_active;
@@ -42,3 +44,22 @@ CREATE TABLE oauth_authorization_transactions (
 );
 
 CREATE INDEX idx_oauth_authorization_transactions_expires_at ON oauth_authorization_transactions(expires_at);
+
+-- +goose Down
+
+DROP TABLE oauth_authorization_transactions;
+DROP TABLE auth_sessions;
+DROP TABLE whitelisted_users;
+
+DROP INDEX uq_users_google_subject_active;
+
+ALTER TABLE users
+    DROP COLUMN google_subject,
+    ADD COLUMN username VARCHAR(50),
+    ADD COLUMN password VARCHAR(255);
+
+ALTER TABLE users
+    ALTER COLUMN username SET NOT NULL,
+    ALTER COLUMN password SET NOT NULL;
+
+CREATE UNIQUE INDEX uq_users_username_active ON users(username) WHERE deleted_at IS NULL;

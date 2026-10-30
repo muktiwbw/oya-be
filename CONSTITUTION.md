@@ -66,7 +66,7 @@ Maintain strict boundaries between layers:
 - **Persistence (`internal/persistence`)**: Implements domain repository interfaces using PostgreSQL and `sqlc`-generated queries. Transport entities must never leak into persistence queries, and database models must not leak into HTTP responses.
 
 ### 8. Database Integrity & Type Safety
-- **Migrations First**: All schema updates must be written as Flyway-compatible versioned migrations under `migrations/` (`V<number>__<description>.sql`). Never modify existing migrations after they are shared.
+- **Migrations First**: All schema updates must be written as Goose-compatible versioned migrations under `migrations/` (`<sequence>_<description>.sql`) and include a `-- +goose Up` directive. Never modify existing migrations after they are shared.
 - **Type-Safe Queries with `sqlc`**: Use `sqlc` with `pgx/v5` for all database interactions. Raw ad-hoc queries outside `queries/` are disallowed unless dynamic SQL generation (such as optional multi-field cursor filtering) strictly requires it.
 - **Database-Level Invariants**: Rely on database constraints (foreign keys, check constraints, unique constraints, and partial indexes for soft-deleted entities) to guarantee data integrity.
 

@@ -35,10 +35,12 @@ func TestEndToEndLifecycle(t *testing.T) {
 	tc.CleanupNetwork(t, nw)
 	require.NoError(t, err)
 
-	initialMigrationPath, err := filepath.Abs(filepath.Join("..", "..", "migrations", "V1__initial_schema.sql"))
+	initialMigrationPath, err := filepath.Abs(filepath.Join("..", "..", "migrations", "00001_initial_schema.sql"))
 	require.NoError(t, err)
-	googleAuthMigrationPath, err := filepath.Abs(filepath.Join("..", "..", "migrations", "V2__google_sso_sessions.sql"))
+	googleAuthMigrationPath, err := filepath.Abs(filepath.Join("..", "..", "migrations", "00002_google_sso_sessions.sql"))
 	require.NoError(t, err)
+	initialMigrationPath = migrationUpScript(t, initialMigrationPath)
+	googleAuthMigrationPath = migrationUpScript(t, googleAuthMigrationPath)
 
 	pgContainer, err := postgres.Run(ctx,
 		"postgres:16-alpine",
@@ -218,4 +220,21 @@ func TestEndToEndLifecycle(t *testing.T) {
 	call("GET", "/api/v1/boards/"+boardID, "", "", 404)
 	// Task 2 is cascaded soft-deleted
 	call("GET", "/api/v1/tasks/"+task2ID, "", "", 404)
+}
+
+func migrationUpScript(t *testing.T, migrationPath string) string {
+	t.Helper()
+
+	migration, err := os.ReadFile(migrationPath)
+	require.NoError(t, err)
+
+	upMigration, _, found := strings.Cut(string(migration), "-- +goose Down")
+	require.True(t, found, "migration %s must include a Goose Down section", migrationPath)
+
+	// PostgreSQL init scripts execute every SQL statement and do not understand
+	// Goose directives, so use only the Up section for the integration fixture.
+	upMigrationPath := filepath.Join(t.TempDir(), filepath.Base(migrationPath))
+	require.NoError(t, os.WriteFile(upMigrationPath, []byte(upMigration), 0o600))
+
+	return upMigrationPath
 }
