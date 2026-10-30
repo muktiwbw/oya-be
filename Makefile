@@ -9,7 +9,7 @@ MOCKERY_VERSION ?= v3.5.5
 MOCKERY ?= $(GO) run github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
 SQLC_VERSION ?= v1.27.0
 SQLC ?= $(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
-FLYWAY_IMAGE ?= flyway/flyway:latest
+GOOSE_IMAGE ?= gomicro/goose:latest
 DB_HOST ?= localhost
 DB_PORT ?= 15432
 DB_NAME ?= oya
@@ -32,7 +32,7 @@ help:
 	@echo "  make check            Run formatting checks, vet, and tests"
 	@echo "  make build            Build the application binary"
 	@echo "  make run              Run the application locally"
-	@echo "  make migrate          Apply pending database migrations using Flyway"
+	@echo "  make migrate          Apply pending database migrations using Goose"
 	@echo "  make docker-build     Build the application image"
 
 fmt:
@@ -80,13 +80,13 @@ run:
 	$(GO) run ./cmd/oya
 
 migrate:
-	$(DOCKER) run --rm --net=host -v "$$(pwd)/migrations":/flyway/sql $(FLYWAY_IMAGE) -url="jdbc:postgresql://$(DB_HOST):$(DB_PORT)/$(DB_NAME)?sslmode=disable" -user=$(DB_USER) -password=$(DB_PASSWORD) migrate
+	$(DOCKER) compose run --rm migrate
 
 dev-db:
 	$(DOCKER) compose up -d postgres
 
 dev-db-stop:
-	$(DOCKER) compose down
+	$(DOCKER) compose down postgres
 
 docker-build:
 	$(DOCKER) build -t $(APP_IMAGE) .

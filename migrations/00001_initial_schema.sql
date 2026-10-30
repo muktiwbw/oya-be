@@ -1,3 +1,5 @@
+-- +goose Up
+
 CREATE TABLE users (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     public_id UUID NOT NULL,
@@ -54,3 +56,10 @@ CREATE TABLE idempotency_keys (
 );
 
 CREATE INDEX idx_idempotency_keys_created_at ON idempotency_keys(created_at);
+
+-- +goose Down
+
+DROP TABLE idempotency_keys;
+DROP TABLE tasks;
+DROP TABLE boards;
+DROP TABLE users;
