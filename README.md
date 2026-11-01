@@ -130,6 +130,43 @@ The application image runs as non-root UID/GID 10001 on Alpine Linux.
 - `GET /readyz`: Readiness check that verifies PostgreSQL connection pool ping and migration state; returns 503 during shutdown.
 - `GET /version`: Returns build metadata (`version`, `commit`). Set Docker build arguments `VERSION` and `COMMIT` during `docker build` to inject release metadata.
 
+## CI/CD & Deployment
+
+GitHub Actions workflows in `.github/workflows/` automate deployment to the target VPS:
+
+- **Build and Deploy (`.github/workflows/build-and-deploy.yaml`)**: Triggered on pushes to `master`. Runs `make check` and `make test-race`, builds and pushes `ghcr.io/muktiwbw/oya-be:latest` (and commit SHA tag) to GitHub Container Registry, then connects to the VPS over SSH to pull the latest repository state, pull the updated `oya-be` image, and restart the container via Docker Compose.
+- **Run Migration (`.github/workflows/run-migration.yaml`)**: Triggered manually via `workflow_dispatch`. Checks out the repository, uses `appleboy/scp-action` to copy the `migrations/` directory directly to `${PROJECT_PATH}` on the VPS via SCP, and executes pending Goose migrations using `docker compose run --rm migrate` over SSH (no repository clone or `git pull` needed on the VPS for migrations).
+
+Configure the following GitHub Actions repository secrets for VPS SSH deployment:
+
+| Secret            | Description                                                |
+| ----------------- | ---------------------------------------------------------- |
+| `SSH_HOST`        | VPS hostname or IP address                                 |
+| `SSH_USER`        | SSH username on the VPS                                    |
+| `SSH_PRIVATE_KEY` | Private SSH key for authenticating with the VPS            |
+| `SSH_PORT`        | SSH port (defaults to `22` if unset)                       |
+| `PROJECT_PATH`    | Absolute path to the project root directory on the VPS     |
+
+### Local Workflow Testing with act
+
+You can validate GitHub Actions workflows locally without pushing to GitHub or touching any servers using [nektos/act](https://github.com/nektos/act):
+
+1. **Install `act`** (macOS):
+   ```sh
+   brew install act
+   ```
+2. **Run dry-run workflow check**:
+   ```sh
+   make act-dryrun     # or: make act-test
+   ```
+
+This validates the YAML syntax, actions configuration, and execution graphs for both the `build-and-deploy` and `run-migration` workflows in dry-run mode (`-n`) without needing secrets, network access, or Docker containers.
+
+To list all workflow jobs recognized by `act`:
+```sh
+make act-list
+```
+
 ## API Examples
 
 See [resources/api/spec.yaml](resources/api/spec.yaml) for the complete OpenAPI 3.0 contract.

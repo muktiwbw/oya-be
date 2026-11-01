@@ -1,22 +1,32 @@
 GO ?= go
-DOCKER ?= docker
+DOCKER ?= $(shell if command -v podman >/dev/null 2>&1; then echo "podman"; elif command -v docker >/dev/null 2>&1; then echo "docker"; else echo "docker"; fi)
 APP_IMAGE ?= oya:integration
 TEST_IMAGE ?= oya-integration:latest
 APP_BINARY ?= bin/oya
-DOCKER_SOCKET ?= /var/run/docker.sock
-TESTCONTAINERS_HOST ?= localhost
-MOCKERY_VERSION ?= v3.5.5
-MOCKERY ?= $(GO) run github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
-SQLC_VERSION ?= v1.27.0
-SQLC ?= $(GO) run github.com/sqlc-dev/sqlc/cmd/sqlc@$(SQLC_VERSION)
-GOOSE_IMAGE ?= gomicro/goose:latest
-DB_HOST ?= localhost
-DB_PORT ?= 15432
-DB_NAME ?= oya
-DB_USER ?= postgres
-DB_PASSWORD ?= postgres
+DOCKER_SOCKET ?= $(shell \
+	if [ -n "$$DOCKER_HOST" ]; then \
+		s=$$(printf '%s\n' "$$DOCKER_HOST" | sed -e 's|^unix://||'); \
+		if [ -S "$$s" ]; then echo "$$s"; exit 0; fi; \
+	fi; \
+	if command -v podman >/dev/null 2>&1; then \
+		for t in '{{.ConnectionInfo.PodmanSocket.Path}}' '{{(index . 0).ConnectionInfo.PodmanSocket.Path}}'; do \
+			s=$$(podman machine inspect --format "$$t" 2>/dev/null | sed -e 's|^unix://||'); \
+			if [ -n "$$s" ] && [ -S "$$s" ]; then echo "$$s"; exit 0; fi; \
+		done; \
+	fi; \
+	if [ -S "$$HOME/.local/share/containers/podman/machine/podman.sock" ]; then \
+		echo "$$HOME/.local/share/containers/podman/machine/podman.sock"; \
+	elif [ -S "$$HOME/.docker/run/docker.sock" ]; then \
+		echo "$$HOME/.docker/run/docker.sock"; \
+	elif [ -S "/var/run/docker.sock" ]; then \
+		echo "/var/run/docker.sock"; \
+	else \
+		echo "/var/run/docker.sock"; \
+	fi)
+ACT_SOCKET := $(patsubst unix://%,%,$(DOCKER_SOCKET))
+ACT ?= DOCKER_HOST="unix://$(ACT_SOCKET)" act --container-architecture linux/amd64 -P ubuntu-latest=catthehacker/ubuntu:act-latest --container-daemon-socket $(ACT_SOCKET)
 
-.PHONY: help fmt vet test test-race generate-mocks sqlc integration-test check build run migrate dev-db dev-db-stop docker-build
+.PHONY: help fmt vet test test-race generate-mocks sqlc integration-test check build run migrate dev-db dev-db-stop docker-build act-list act-dryrun act-test
 
 help:
 	@echo "Available commands:"
@@ -34,6 +44,8 @@ help:
 	@echo "  make run              Run the application locally"
 	@echo "  make migrate          Apply pending database migrations using Goose"
 	@echo "  make docker-build     Build the application image"
+	@echo "  make act-dryrun       Dry-run and validate both workflows locally (-n)"
+	@echo "  make act-list         List workflow jobs recognized by act"
 
 fmt:
 	$(GO) fmt ./...
@@ -90,3 +102,14 @@ dev-db-stop:
 
 docker-build:
 	$(DOCKER) build -t $(APP_IMAGE) .
+
+act-list:
+	$(ACT) -l
+
+act-dryrun:
+	@echo "==> Validating build-and-deploy workflow (push event)..."
+	$(ACT) push -W .github/workflows/build-and-deploy.yaml -n
+	@echo "==> Validating run-migration workflow (workflow_dispatch event)..."
+	$(ACT) workflow_dispatch -W .github/workflows/run-migration.yaml -n
+
+act-test: act-dryrun
