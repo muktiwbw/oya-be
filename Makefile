@@ -1,4 +1,6 @@
 GO ?= go
+MOCKERY_VERSION ?= v3.5.5
+MOCKERY ?= $(GO) run github.com/vektra/mockery/v3@$(MOCKERY_VERSION)
 DOCKER ?= $(shell if command -v podman >/dev/null 2>&1; then echo "podman"; elif command -v docker >/dev/null 2>&1; then echo "docker"; else echo "docker"; fi)
 APP_IMAGE ?= oya:integration
 TEST_IMAGE ?= oya-integration:latest
