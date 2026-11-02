@@ -51,6 +51,16 @@ jobs:
           docker push ${{ env.IMAGE_NAME }}:latest
           docker push ${{ env.IMAGE_NAME }}:${{ github.sha }}
 
+      - name: Copy docker-compose.yaml to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT || 22 }}
+          source: "docker-compose.yaml"
+          target: ${{ secrets.PROJECT_PATH }}
+
       - name: Pull image and run container on VPS
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -61,6 +71,6 @@ jobs:
           script: |
             set -e
             cd ${{ secrets.PROJECT_PATH }}
-            git pull origin master
             docker compose pull oya-be
             docker compose up -d oya-be
+            docker image prune -f
